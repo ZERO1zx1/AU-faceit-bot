@@ -4,9 +4,10 @@ import contextlib
 
 import discord
 
-from app.db import SessionFactory
+from app.repositories.guild_repository import GuildRepository
 from app.services.log_service import LogService
 from app.services.registration_service import RegistrationService
+from app.supabase_client import get_client
 
 
 class RegisterModal(discord.ui.Modal, title="Among Us Registration"):
@@ -29,16 +30,15 @@ class RegisterModal(discord.ui.Modal, title="Among Us Registration"):
     async def on_submit(self, interaction: discord.Interaction):
         name = self.among_us_name.value.strip()
         nick = self.nickname.value.strip() if self.nickname.value else None
-        async with SessionFactory() as session:
-            svc = RegistrationService(session)
-            await svc.register(interaction.guild_id, interaction.user.id, name, nick)
-            log_svc = LogService(session)
-            await log_svc.log(
-                interaction.guild_id, "REGISTER",
-                actor_id=interaction.user.id, target_entity=name,
-                details={"among_us_name": name, "nickname": nick},
-            )
-            await session.commit()
+        client = get_client()
+        svc = RegistrationService(client)
+        await svc.register(interaction.guild_id, interaction.user.id, name, nick)
+        log_svc = LogService(client)
+        await log_svc.log(
+            interaction.guild_id, "REGISTER",
+            actor_id=interaction.user.id, target_entity=name,
+            details={"among_us_name": name, "nickname": nick},
+        )
 
         settings = await self._get_settings(interaction)
         if settings and settings.registered_role_id:
@@ -56,7 +56,5 @@ class RegisterModal(discord.ui.Modal, title="Among Us Registration"):
         )
 
     async def _get_settings(self, interaction):
-        async with SessionFactory() as session:
-            from app.repositories.guild_repository import GuildRepository
-            repo = GuildRepository(session)
-            return await repo.get_settings(interaction.guild_id)
+        repo = GuildRepository(get_client())
+        return await repo.get_settings(interaction.guild_id)

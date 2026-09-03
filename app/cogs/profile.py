@@ -2,13 +2,12 @@
 
 import discord
 from discord.ext import commands
-from sqlalchemy import select
 
-from app.db import SessionFactory
-from app.models.player import Player
 from app.repositories.elo_repository import EloRepository
+from app.repositories.player_repository import PlayerRepository
 from app.services.leaderboard_service import LeaderboardService
 from app.services.player_service import PlayerService
+from app.supabase_client import get_client
 from app.ui.embeds import profile_embed
 
 
@@ -19,16 +18,16 @@ class ProfileCog(commands.Cog):
     @commands.command(name="profile")
     async def profile(self, ctx: commands.Context, member: discord.Member = None):
         member = member or ctx.author
-        async with SessionFactory() as session:
-            svc = PlayerService(session)
-            player = await svc.get(ctx.guild.id, member.id)
-            if not player:
-                return await ctx.send("Бүртгүүлээгүй байна.")
-            lb_svc = LeaderboardService(session)
-            lb = await lb_svc.get(ctx.guild.id, limit=100)
-            rank = next(
-                (i + 1 for i, p in enumerate(lb) if p.discord_user_id == member.id), None
-            )
+        client = get_client()
+        svc = PlayerService(client)
+        player = await svc.get(ctx.guild.id, member.id)
+        if not player:
+            return await ctx.send("Бүртгүүлээгүй байна.")
+        lb_svc = LeaderboardService(client)
+        lb = await lb_svc.get(ctx.guild.id, limit=100)
+        rank = next(
+            (i + 1 for i, p in enumerate(lb) if p.discord_user_id == member.id), None
+        )
 
         embed = profile_embed(member, player)
         if rank:
@@ -38,18 +37,14 @@ class ProfileCog(commands.Cog):
     @commands.command(name="matches")
     async def matches(self, ctx: commands.Context, member: discord.Member = None):
         member = member or ctx.author
-        async with SessionFactory() as session:
-            elo_repo = EloRepository(session)
-            res = await session.execute(
-                select(Player).where(
-                    Player.guild_id == ctx.guild.id,
-                    Player.discord_user_id == member.id,
-                )
-            )
-            player = res.scalar_one_or_none()
-            if not player:
-                return await ctx.send("Бүртгүүлээгүй байна.")
-            history = await elo_repo.get_history(player.id, limit=20)
+        client = get_client()
+        player_repo = PlayerRepository(client)
+        player = await player_repo.get(ctx.guild.id, member.id)
+        if not player:
+            return await ctx.send("Бүртгүүлээгүй байна.")
+
+        elo_repo = EloRepository(client)
+        history = await elo_repo.get_history(player.id, limit=20)
 
         if not history:
             return await ctx.send("Match түүх байхгүй байна.")
@@ -67,7 +62,3 @@ class ProfileCog(commands.Cog):
             color=discord.Color.blurple(),
         )
         await ctx.send(embed=embed)
-
-
-async def setup(bot):
-    await bot.add_cog(ProfileCog(bot))

@@ -1,67 +1,76 @@
 """Queue repository."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 
-from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.logging import get_logger
 from app.models.queue import QueueEntry
+from app.repositories.base import BaseRepository
 from app.utils.constants import QUEUE_STATUS_WAITING
+from supabase import AsyncClient
+
+logger = get_logger(__name__)
 
 
-class QueueRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
+class QueueRepository(BaseRepository[QueueEntry]):
+    model = QueueEntry
+    table_name = "queue_entries"
+
+    def __init__(self, client: AsyncClient) -> None:
+        super().__init__(client)
+        self.client = client
 
     async def get_entries(self, guild_id: int) -> Sequence[QueueEntry]:
-        result = await self.session.execute(
-            select(QueueEntry)
-            .where(QueueEntry.guild_id == guild_id, QueueEntry.status == QUEUE_STATUS_WAITING)
-            .order_by(QueueEntry.joined_at)
+        result = (
+            await self._table()
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("status", QUEUE_STATUS_WAITING)
+            .order("joined_at")
+            .execute()
         )
-        return list(result.scalars().all())
+        return [QueueEntry.from_row(row) for row in self._rows(result)]
 
     async def get_entry(self, guild_id: int, player_id: int) -> QueueEntry | None:
-        result = await self.session.execute(
-            select(QueueEntry).where(
-                QueueEntry.guild_id == guild_id,
-                QueueEntry.player_id == player_id,
-                QueueEntry.status == QUEUE_STATUS_WAITING,
-            )
+        result = (
+            await self._table()
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("player_id", player_id)
+            .eq("status", QUEUE_STATUS_WAITING)
+            .maybe_single()
+            .execute()
         )
-        return result.scalar_one_or_none()
+        return QueueEntry.from_row(result.data) if result.data else None
 
     async def add(self, guild_id: int, player_id: int) -> QueueEntry:
         entry = QueueEntry(guild_id=guild_id, player_id=player_id, status=QUEUE_STATUS_WAITING)
-        self.session.add(entry)
-        await self.session.flush()
-        return entry
+        created = await self.insert(entry)
+        return created if created else entry
 
     async def remove(self, guild_id: int, player_id: int) -> bool:
-        result = await self.session.execute(
-            delete(QueueEntry).where(
-                QueueEntry.guild_id == guild_id,
-                QueueEntry.player_id == player_id,
-                QueueEntry.status == QUEUE_STATUS_WAITING,
-            )
+        result = (
+            await self._table()
+            .delete()
+            .eq("guild_id", guild_id)
+            .eq("player_id", player_id)
+            .eq("status", QUEUE_STATUS_WAITING)
+            .execute()
         )
-        await self.session.flush()
-        return result.rowcount > 0
+        return len(self._rows(result)) > 0
 
     async def clear(self, guild_id: int) -> None:
-        await self.session.execute(
-            delete(QueueEntry).where(
-                QueueEntry.guild_id == guild_id,
-                QueueEntry.status == QUEUE_STATUS_WAITING,
-            )
+        await (
+            self._table().delete().eq("guild_id", guild_id).eq("status", QUEUE_STATUS_WAITING).execute()
         )
-        await self.session.flush()
 
     async def count(self, guild_id: int) -> int:
-        result = await self.session.execute(
-            select(QueueEntry.id).where(
-                QueueEntry.guild_id == guild_id,
-                QueueEntry.status == QUEUE_STATUS_WAITING,
-            )
+        result = (
+            await self._table()
+            .select("id")
+            .eq("guild_id", guild_id)
+            .eq("status", QUEUE_STATUS_WAITING)
+            .execute()
         )
-        return len(result.all())
+        return len(self._rows(result))

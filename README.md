@@ -21,36 +21,38 @@ Multi-server Discord Among Us competitive matchmaking platform.
 
 - Python 3.12+
 - discord.py 2.x
-- SQLAlchemy 2.x (async) + asyncpg
-- Alembic (migrations)
-- PostgreSQL
+- Supabase (PostgREST REST API)
+  - Models are plain Pydantic dataclasses; all persistence is via the Supabase REST API
+  - Tables + critical Postgres functions live in `supabase/schema.sql`
+- PostgreSQL (managed by Supabase)
 
 ## Setup
 
 1. Set up a Discord application + bot and store the token.
 
-2. Create a `.env` file (see `.env.example`):
+2. Create a Supabase project. From **Project Settings → API**, copy the **Project URL**
+   and an **anon / service_role** key.
+
+3. In the Supabase SQL editor, run `supabase/schema.sql` — this creates all tables
+   and the critical Postgres RPC functions needed for atomic operations.
+
+4. Create a `.env` file (see `.env.example`):
 
 ```dotenv
 DISCORD_TOKEN=your_bot_token_here
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/au_faceit
+SUPABASE_URL=https://your_project_ref.supabase.co
+SUPABASE_KEY=your_supabase_key
 ENVIRONMENT=development
 LOG_LEVEL=INFO
 ```
 
-3. Install dependencies:
+5. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Run migrations:
-
-```bash
-alembic upgrade head
-```
-
-5. Start the bot:
+6. Start the bot:
 
 ```bash
 python -m app.bot
@@ -65,9 +67,8 @@ docker compose up --build
 ## Development
 
 ```bash
-ruff check .
+ruff check app/ tests/
 pytest
-alembic upgrade head
 ```
 
 ## Commands
@@ -82,17 +83,17 @@ Admin: `setup-server`, `setup-register`, `setup-faceit-level`, `setup-leaderboar
 ```
 app/
 ├── bot.py            # entry point
-├── config.py         # pydantic-settings
-├── db.py             # async engine + session factory
+├── config.py         # pydantic-settings (Supabase URL/key)
+├── supabase_client.py# Supabase async client singleton
 ├── logging.py        # logging config
 ├── cogs/             # discord interaction layer
 ├── services/         # business logic
-├── repositories/     # data access
-├── models/           # SQLAlchemy ORM models
+├── repositories/     # Supabase REST data access
+├── models/           # Pydantic models (table shapes)
 ├── ui/               # embeds, views, modals, selects
 ├── tasks/            # background tasks
 └── utils/            # helpers, validation, permissions
-migrations/           # alembic
+supabase/schema.sql   # tables + critical Postgres RPC functions
 scripts/              # command sync
-tests/
+tests/                # pytest (uses an in-memory fake Supabase client)
 ```

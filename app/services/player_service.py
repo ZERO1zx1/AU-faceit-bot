@@ -2,11 +2,12 @@
 
 from app.models.player import Player
 from app.repositories.player_repository import PlayerRepository
+from supabase import AsyncClient
 
 
 class PlayerService:
-    def __init__(self, session):
-        self.players = PlayerRepository(session)
+    def __init__(self, client: AsyncClient):
+        self.players = PlayerRepository(client)
 
     async def get(self, guild_id: int, user_id: int) -> Player | None:
         return await self.players.get(guild_id, user_id)

@@ -2,11 +2,10 @@
 
 import discord
 from discord.ext import commands
-from sqlalchemy import select
 
-from app.db import SessionFactory
 from app.models.level import LevelRole
 from app.repositories.guild_repository import GuildRepository
+from app.supabase_client import get_client
 
 DEFAULT_LEVEL_BOUNDARIES = {
     1: (0, 799), 2: (800, 899), 3: (900, 999), 4: (1000, 1099),
@@ -23,16 +22,15 @@ class SetupCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def setup_server(self, ctx: commands.Context):
         guild = ctx.guild
-        async with SessionFactory() as session:
-            repo = GuildRepository(session)
-            await repo.upsert_settings(
-                guild.id,
-                default_elo=1000,
-                win_elo=8,
-                loss_elo=-6,
-                queue_size=15,
-            )
-            await session.commit()
+        client = get_client()
+        repo = GuildRepository(client)
+        await repo.upsert_settings(
+            guild.id,
+            default_elo=1000,
+            win_elo=8,
+            loss_elo=-6,
+            queue_size=15,
+        )
 
         registered_role = discord.utils.get(guild.roles, name="AU Registered")
         if not registered_role:
@@ -57,15 +55,12 @@ class SetupCog(commands.Cog):
             except discord.HTTPException:
                 match_category = None
 
-        async with SessionFactory() as session:
-            repo = GuildRepository(session)
-            await repo.upsert_settings(
-                guild.id,
-                registered_role_id=registered_role.id,
-                log_channel_id=log_channel.id if log_channel else None,
-                match_category_id=match_category.id if match_category else None,
-            )
-            await session.commit()
+        await repo.upsert_settings(
+            guild.id,
+            registered_role_id=registered_role.id,
+            log_channel_id=log_channel.id if log_channel else None,
+            match_category_id=match_category.id if match_category else None,
+        )
 
         await ctx.send(
             "✅ **SERVER SETUP COMPLETE**\n"
@@ -83,41 +78,40 @@ class SetupCog(commands.Cog):
         embed = registration_embed()
         view = RegisterView()
         msg = await ctx.send(embed=embed, view=view)
-        async with SessionFactory() as session:
-            repo = GuildRepository(session)
-            await repo.upsert_settings(
-                ctx.guild.id,
-                register_channel_id=ctx.channel.id,
-                register_message_id=msg.id,
-            )
-            await session.commit()
+        repo = GuildRepository(get_client())
+        await repo.upsert_settings(
+            ctx.guild.id,
+            register_channel_id=ctx.channel.id,
+            register_message_id=msg.id,
+        )
         await ctx.send("✅ Registration panel created!")
 
     @commands.command(name="setup-faceit-level")
     @commands.has_permissions(administrator=True)
     async def setup_levels(self, ctx: commands.Context):
-        default_boundaries = DEFAULT_LEVEL_BOUNDARIES
-        async with SessionFactory() as session:
-            for level, (min_elo, max_elo) in default_boundaries.items():
-                result = await session.execute(
-                    select(LevelRole).where(
-                        LevelRole.guild_id == ctx.guild.id, LevelRole.level == level
-                    )
-                )
-                if result.scalar_one_or_none():
-                    continue
-                role = discord.utils.get(ctx.guild.roles, name=f"Level {level}")
-                if not role:
-                    try:
-                        role = await ctx.guild.create_role(name=f"Level {level}")
-                    except discord.HTTPException:
-                        role = None
-                lr = LevelRole(
-                    guild_id=ctx.guild.id, level=level, min_elo=min_elo, max_elo=max_elo,
-                    role_id=role.id if role else None,
-                )
-                session.add(lr)
-            await session.commit()
+        client = get_client()
+        for level, (min_elo, max_elo) in DEFAULT_LEVEL_BOUNDARIES.items():
+            existing = (
+                await client.table("level_roles")
+                .select("id")
+                .eq("guild_id", ctx.guild.id)
+                .eq("level", level)
+                .maybe_single()
+                .execute()
+            )
+            if existing.data:
+                continue
+            role = discord.utils.get(ctx.guild.roles, name=f"Level {level}")
+            if not role:
+                try:
+                    role = await ctx.guild.create_role(name=f"Level {level}")
+                except discord.HTTPException:
+                    role = None
+            lr = LevelRole(
+                guild_id=ctx.guild.id, level=level, min_elo=min_elo, max_elo=max_elo,
+                role_id=role.id if role else None,
+            )
+            await client.table("level_roles").insert(lr.to_payload()).execute()
         await ctx.send("✅ Level roles (1-10) configured!")
 
     @commands.command(name="setup-queue")
@@ -129,25 +123,17 @@ class SetupCog(commands.Cog):
         embed = queue_embed(count=0, max_size=15)
         view = QueueView()
         msg = await ctx.send(embed=embed, view=view)
-        async with SessionFactory() as session:
-            repo = GuildRepository(session)
-            await repo.upsert_settings(
-                ctx.guild.id,
-                queue_channel_id=ctx.channel.id,
-                queue_message_id=msg.id,
-            )
-            await session.commit()
+        repo = GuildRepository(get_client())
+        await repo.upsert_settings(
+            ctx.guild.id,
+            queue_channel_id=ctx.channel.id,
+            queue_message_id=msg.id,
+        )
         await ctx.send("✅ Queue panel created!")
 
     @commands.command(name="setup-leaderboard")
     @commands.has_permissions(administrator=True)
     async def setup_leaderboard(self, ctx: commands.Context):
-        async with SessionFactory() as session:
-            repo = GuildRepository(session)
-            await repo.upsert_settings(ctx.guild.id, leaderboard_channel_id=ctx.channel.id)
-            await session.commit()
+        repo = GuildRepository(get_client())
+        await repo.upsert_settings(ctx.guild.id, leaderboard_channel_id=ctx.channel.id)
         await ctx.send("✅ Leaderboard channel set! Use `/leaderboard` to post.")
-
-
-async def setup(bot):
-    await bot.add_cog(SetupCog(bot))

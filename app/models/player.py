@@ -1,55 +1,40 @@
 """Player model."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    func,
-)
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.base import Base, TimestampMixin
+from app.models.base import TimestampedModel
 
 
-class Player(TimestampMixin, Base):
-    __tablename__ = "players"
-    __table_args__ = (
-        UniqueConstraint("guild_id", "discord_user_id", name="uq_players_guild_user"),
-        UniqueConstraint("guild_id", "among_us_name", name="uq_players_guild_amongus"),
-    )
+class Player(TimestampedModel):
+    """A registered Among Us player, unique per (guild, discord user)."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    discord_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    id: int | None = None
+    guild_id: int
+    discord_user_id: int
 
-    among_us_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    nickname: Mapped[str | None] = mapped_column(Text, nullable=True)
+    among_us_name: str
+    nickname: str | None = None
 
-    faceit_player_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    faceit_nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    faceit_player_id: str | None = None
+    faceit_nickname: str | None = None
 
-    elo: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
-    peak_elo: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
+    elo: int = 1000
+    peak_elo: int = 1000
 
-    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    level: int = 1
 
-    matches: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    matches: int = 0
+    wins: int = 0
+    losses: int = 0
 
-    win_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    best_win_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    win_streak: int = 0
+    best_win_streak: int = 0
 
-    total_voice_seconds: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    total_voice_seconds: int = 0
 
-    registered_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    banned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    registered_at: datetime | None = None
+
+    active: bool = True
+    banned: bool = False

@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import asyncio
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.logging import get_logger
 from app.repositories.player_repository import PlayerRepository
 from app.repositories.queue_repository import QueueRepository
+from supabase import AsyncClient
 
 logger = get_logger(__name__)
 
 
 class QueueService:
-    def __init__(self, session: AsyncSession, queue_size: int = 15) -> None:
-        self.session = session
-        self.queue_repo = QueueRepository(session)
-        self.players = PlayerRepository(session)
+    def __init__(self, client: AsyncClient, queue_size: int = 15) -> None:
+        self.client = client
+        self.queue_repo = QueueRepository(client)
+        self.players = PlayerRepository(client)
         self.queue_size = queue_size
         self._lock = asyncio.Lock()
 
@@ -54,12 +53,13 @@ class QueueService:
         return await self.queue_repo.get_entries(guild_id)
 
     async def pop_all(self, guild_id: int) -> list[int]:
-        """Atomically lock and pop all waiting entries."""
+        """Atomically lock and pop all waiting entries.
+
+        Delegates to a Postgres function so the read-and-clear happens in a
+        single transaction, avoiding duplicate match creation under concurrency.
+        """
         async with self._lock:
-            entries = await self.queue_repo.get_entries(guild_id)
-            if not entries:
-                return []
-            player_ids = [e.player_id for e in entries]
-            await self.queue_repo.clear(guild_id)
+            result = await self.client.rpc("pop_queue_entries", {"p_guild_id": guild_id}).execute()
+            player_ids = [int(r) for r in (result.data or [])]
             logger.info("Queue popped: guild=%s count=%d", guild_id, len(player_ids))
             return player_ids

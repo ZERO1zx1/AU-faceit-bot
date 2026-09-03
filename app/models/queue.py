@@ -1,26 +1,18 @@
 """Queue entry model."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.base import Base
+from app.models.base import SupabaseModel
 
 
-class QueueEntry(Base):
-    __tablename__ = "queue_entries"
-    __table_args__ = (
-        UniqueConstraint("guild_id", "player_id", "status", name="uq_queue_guild_player"),
-    )
+class QueueEntry(SupabaseModel):
+    """A player waiting in the matchmaking queue."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    player_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    joined_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
-    queue_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="WAITING", nullable=False)
+    id: int | None = None
+    guild_id: int
+    player_id: int
+    joined_at: datetime | None = None
+    queue_position: int | None = None
+    status: str = "WAITING"

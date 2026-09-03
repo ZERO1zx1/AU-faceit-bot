@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     )
 
     discord_token: str
-    database_url: str = "postgresql+asyncpg://postgres:password@localhost:5432/au_faceit"
+    supabase_url: str = ""
+    supabase_key: str = ""
     faceit_api_key: str = ""
     environment: str = "development"
     log_level: str = "INFO"

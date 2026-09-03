@@ -3,28 +3,24 @@
 from __future__ import annotations
 
 import discord
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logging import get_logger
 from app.models.level import LevelRole
 from app.models.player import Player
 from app.repositories.player_repository import PlayerRepository
+from supabase import AsyncClient
 
 logger = get_logger(__name__)
 
 
 class LevelService:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-        self.players = PlayerRepository(session)
+    def __init__(self, client: AsyncClient) -> None:
+        self.client = client
+        self.players = PlayerRepository(client)
 
     async def get_level_role_map(self, guild_id: int) -> dict[int, LevelRole]:
-        result = await self.session.execute(
-            select(LevelRole).where(LevelRole.guild_id == guild_id)
-        )
-        roles = {r.level: r for r in result.scalars().all()}
-        return roles
+        result = await self.client.table("level_roles").select("*").eq("guild_id", guild_id).execute()
+        return {LevelRole.from_row(row).level: LevelRole.from_row(row) for row in (result.data or [])}
 
     async def calculate_level(self, guild_id: int, elo: int) -> int:
         levels = await self.get_level_role_map(guild_id)
@@ -37,10 +33,11 @@ class LevelService:
     async def update_player_level(self, player: Player) -> int:
         new_level = await self.calculate_level(player.guild_id, player.elo)
         old_level = player.level
-        if old_level != new_level:
-            player.level = new_level
-            await self.session.flush()
-            logger.info("Level changed: player=%s %d→%d", player.id, old_level, new_level)
+        if old_level != new_level and player.id is not None:
+            updated = await self.players.update(player.id, {"level": new_level})
+            if updated:
+                player.level = new_level
+            logger.info("Level changed: player=%s %d\u2192%d", player.id, old_level, new_level)
         return new_level
 
     async def sync_role(

@@ -1,32 +1,64 @@
-"""Base repository providing common SQLAlchemy session helpers."""
+"""Base repository providing common Supabase REST table helpers."""
 
 from __future__ import annotations
 
-from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase
+from typing import Any
+
+from app.logging import get_logger
+from app.models.base import SupabaseModel
+from supabase import AsyncClient
+
+logger = get_logger(__name__)
 
 
-class BaseRepository[T: DeclarativeBase]:
-    model: type[T]
+class BaseRepository[M: SupabaseModel]:
+    """Thin wrapper around a single Supabase table.
 
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
+    ``model`` must be a Pydantic model and ``table_name`` the associated
+    PostgREST table name.
+    """
 
-    async def get_by_id(self, record_id: int) -> T | None:
-        return await self.session.get(self.model, record_id)
+    model: type[M]
+    table_name: str
 
-    async def add(self, obj: T) -> T:
-        self.session.add(obj)
-        await self.session.flush()
-        return obj
+    def __init__(self, client: AsyncClient) -> None:
+        self.client = client
+
+    # -- helpers ----------------------------------------------------------
+
+    def _table(self):
+        return self.client.table(self.table_name)
+
+    @staticmethod
+    def _rows(result: Any) -> list[dict]:
+        return list(result.data or [])
+
+    # -- CRUD -------------------------------------------------------------
+
+    async def get_by_id(self, record_id: int) -> M | None:
+        result = await self._table().select("*").eq("id", record_id).maybe_single().execute()
+        return self.model.from_row(result.data) if result.data else None
+
+    async def insert(self, obj: M, *, return_ids: bool = True) -> M | None:
+        payload = obj.to_payload()
+        result = await self._table().insert(payload).execute()
+        rows = self._rows(result)
+        if not rows:
+            return None
+        row = rows[0]
+        if return_ids:
+            # merge the server-assigned id/timestamps back onto the object
+            merged = obj.model_copy(update=row)
+            return merged
+        return None
+
+    async def update(self, record_id: int, fields: dict) -> None:
+        result = await self._table().update(fields).eq("id", record_id).execute()
+        return result
 
     async def delete_by_id(self, record_id: int) -> None:
-        await self.session.execute(delete(self.model).where(self.model.id == record_id))
-        await self.session.flush()
+        await self._table().delete().eq("id", record_id).execute()
 
-    async def commit(self) -> None:
-        await self.session.commit()
-
-    async def rollback(self) -> None:
-        await self.session.rollback()
+    async def _select(self, *cols: str):
+        """Return a select builder for the given columns (default ``*``)."""
+        return self._table().select(*(cols or ("*",)))

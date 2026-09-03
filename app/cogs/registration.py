@@ -3,8 +3,8 @@
 import discord
 from discord.ext import commands
 
-from app.db import SessionFactory
 from app.services.registration_service import RegistrationService
+from app.supabase_client import get_client
 from app.ui.views import UnregisterConfirmView
 
 
@@ -14,9 +14,9 @@ class RegistrationCog(commands.Cog):
 
     @commands.command(name="unregister")
     async def unregister(self, ctx: commands.Context):
-        async with SessionFactory() as session:
-            svc = RegistrationService(session)
-            player = await svc.get(ctx.guild.id, ctx.author.id)
+        client = get_client()
+        svc = RegistrationService(client)
+        player = await svc.get(ctx.guild.id, ctx.author.id)
         if not player:
             return await ctx.send("Та бүртгэлгүй байна.")
 

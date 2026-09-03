@@ -1,6 +1,6 @@
 from app.models.audit import AuditLog
 from app.models.ban import Ban
-from app.models.base import Base
+from app.models.base import SupabaseModel, TimestampedModel
 from app.models.cooldown import Cooldown
 from app.models.elo import EloTransaction
 from app.models.guild import Guild, GuildSettings
@@ -12,7 +12,7 @@ from app.models.queue import QueueEntry
 from app.models.voice import VoiceSession, VoiceTotal
 
 __all__ = [
-    "Base",
+    "SupabaseModel", "TimestampedModel",
     "Guild", "GuildSettings",
     "Player",
     "EloTransaction",

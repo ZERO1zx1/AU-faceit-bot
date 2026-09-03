@@ -2,9 +2,9 @@
 
 import discord
 
-from app.db import SessionFactory
 from app.services.queue_service import QueueService
 from app.services.registration_service import RegistrationService
+from app.supabase_client import get_client
 from app.utils.ids import BUTTON_IDS
 
 
@@ -28,24 +28,24 @@ class QueueView(discord.ui.View):
         label="ENTER MATCH", style=discord.ButtonStyle.success, custom_id=BUTTON_IDS["queue_join"]
     )
     async def join_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        async with SessionFactory() as session:
-            svc = QueueService(session, queue_size=15)
-            try:
-                count = await svc.join(interaction.guild_id, interaction.user.id)
-                await interaction.response.send_message(
-                    f"Queue-д орлоо! ({count}/15)", ephemeral=True
-                )
-            except ValueError as e:
-                await interaction.response.send_message(str(e), ephemeral=True)
+        client = get_client()
+        svc = QueueService(client, queue_size=15)
+        try:
+            count = await svc.join(interaction.guild_id, interaction.user.id)
+            await interaction.response.send_message(
+                f"Queue-д орлоо! ({count}/15)", ephemeral=True
+            )
+        except ValueError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
 
     @discord.ui.button(
         label="LEAVE QUEUE", style=discord.ButtonStyle.danger, custom_id=BUTTON_IDS["queue_leave"]
     )
     async def leave_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        async with SessionFactory() as session:
-            svc = QueueService(session, queue_size=15)
-            await svc.leave(interaction.guild_id, interaction.user.id)
-            await interaction.response.send_message("Queue-с гарлаа.", ephemeral=True)
+        client = get_client()
+        svc = QueueService(client, queue_size=15)
+        await svc.leave(interaction.guild_id, interaction.user.id)
+        await interaction.response.send_message("Queue-с гарлаа.", ephemeral=True)
 
 
 class UnregisterConfirmView(discord.ui.View):
@@ -58,13 +58,10 @@ class UnregisterConfirmView(discord.ui.View):
         custom_id=BUTTON_IDS["unregister_confirm"],
     )
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        async with SessionFactory() as session:
-            svc = RegistrationService(session)
-            await svc.unregister(interaction.guild_id, interaction.user.id)
-            await session.commit()
-            await interaction.response.edit_message(
-                content="Бүртгэл устгагдлаа.", view=None
-            )
+        client = get_client()
+        svc = RegistrationService(client)
+        await svc.unregister(interaction.guild_id, interaction.user.id)
+        await interaction.response.edit_message(content="Бүртгэл устгагдлаа.", view=None)
 
     @discord.ui.button(
         label="CANCEL",
@@ -84,15 +81,14 @@ class ResultApprovalView(discord.ui.View):
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
         from app.services.log_service import LogService
         from app.services.result_service import ResultService
-        async with SessionFactory() as session:
-            result_svc = ResultService(session)
-            await result_svc.approve_result(self.match_id, approved_by=interaction.user.id)
-            log_svc = LogService(session)
-            await log_svc.log(
-                interaction.guild_id, "RESULT_APPROVED",
-                actor_id=interaction.user.id, target_entity=str(self.match_id),
-            )
-            await session.commit()
+        client = get_client()
+        result_svc = ResultService(client)
+        await result_svc.approve_result(self.match_id, approved_by=interaction.user.id)
+        log_svc = LogService(client)
+        await log_svc.log(
+            interaction.guild_id, "RESULT_APPROVED",
+            actor_id=interaction.user.id, target_entity=str(self.match_id),
+        )
         await interaction.response.edit_message(content="Result approved!", view=None)
 
     @discord.ui.button(label="REJECT", style=discord.ButtonStyle.danger)

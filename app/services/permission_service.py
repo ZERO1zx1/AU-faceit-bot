@@ -4,11 +4,12 @@ import discord
 from discord.ext import commands
 
 from app.repositories.guild_repository import GuildRepository
+from supabase import AsyncClient
 
 
 class PermissionService:
-    def __init__(self, session) -> None:
-        self.guilds = GuildRepository(session)
+    def __init__(self, client: AsyncClient) -> None:
+        self.guilds = GuildRepository(client)
 
     async def is_admin(self, ctx: commands.Context) -> bool:
         if ctx.author.guild_permissions.administrator:

@@ -1,112 +1,77 @@
-"""Match, MatchPlayer and MatchResult models."""
+"""Match, MatchPlayer, MatchResult and ResultSubmission models."""
+
+from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import (
-    BigInteger,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    func,
-)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.models.base import Base
+from app.models.base import SupabaseModel
 
 
-class Match(Base):
-    __tablename__ = "matches"
+class Match(SupabaseModel):
+    """A competitive match between up to ``queue_size`` players."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    display_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    id: int | None = None
+    guild_id: int
+    display_id: str
 
-    status: Mapped[str] = mapped_column(String(20), default="CREATING", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
-    started_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    status: str = "CREATING"
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
-    text_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    voice_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    text_channel_id: int | None = None
+    voice_channel_id: int | None = None
 
-    average_elo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    average_elo: int | None = None
 
-    winner_side: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    result_submitted_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    result_approved_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    winner_side: str | None = None
+    result_submitted_by: int | None = None
+    result_approved_by: int | None = None
 
-    result_processed: Mapped[bool] = mapped_column(default=False, nullable=False)
-
-    players: Mapped[list["MatchPlayer"]] = relationship(
-        back_populates="match", cascade="all, delete-orphan"
-    )
-    result: Mapped[Optional["MatchResult"]] = relationship(
-        back_populates="match", uselist=False, cascade="all, delete-orphan"
-    )
+    result_processed: bool = False
 
 
-class MatchPlayer(Base):
-    __tablename__ = "match_players"
-    __table_args__ = (
-        UniqueConstraint("match_id", "player_id", name="uq_match_players_match_player"),
-        UniqueConstraint("match_id", "call_number", name="uq_match_players_match_call"),
-    )
+class MatchPlayer(SupabaseModel):
+    """A player assigned to a match with a CALL number and role side."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    player_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False
-    )
+    id: int | None = None
+    match_id: int
+    player_id: int
 
-    call_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    role_side: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    call_number: int
+    role_side: str | None = None
 
-    elo_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    elo_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    elo_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elo_before: int | None = None
+    elo_delta: int | None = None
+    elo_after: int | None = None
 
-    result: Mapped[str | None] = mapped_column(String(20), nullable=True)
-
-    match: Mapped[Match] = relationship(back_populates="players")
+    result: str | None = None
 
 
-class MatchResult(Base):
-    __tablename__ = "match_results"
+class MatchResult(SupabaseModel):
+    """The final, approved result of a completed match."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, unique=True
-    )
-    winner_side: Mapped[str] = mapped_column(String(20), nullable=False)
-    screenshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    submitted_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    approved_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    submitted_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
-    approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
-
-    match: Mapped[Match] = relationship(back_populates="result")
+    id: int | None = None
+    match_id: int
+    winner_side: str
+    screenshot_url: str | None = None
+    submitted_by: int
+    approved_by: int | None = None
+    submitted_at: datetime | None = None
+    approved_at: datetime | None = None
 
 
-class ResultSubmission(Base):
-    __tablename__ = "result_submissions"
+class ResultSubmission(SupabaseModel):
+    """A pending result submission waiting for an admin to approve."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    submitted_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    winner_side: Mapped[str] = mapped_column(String(20), nullable=False)
-    impostor_player_ids: Mapped[str] = mapped_column(Text, nullable=False)
-    screenshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="PENDING", nullable=False)
-    submitted_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    id: int | None = None
+    match_id: int
+    guild_id: int
+    submitted_by: int
+    winner_side: str
+    impostor_player_ids: str
+    screenshot_url: str | None = None
+    status: str = "PENDING"
+    submitted_at: datetime | None = None
+    approved_by: int | None = None
+    approved_at: datetime | None = None

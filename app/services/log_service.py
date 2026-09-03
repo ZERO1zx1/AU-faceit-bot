@@ -2,14 +2,13 @@
 
 import json
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.audit import AuditLog
+from supabase import AsyncClient
 
 
 class LogService:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
+    def __init__(self, client: AsyncClient) -> None:
+        self.client = client
 
     async def log(
         self,
@@ -31,5 +30,4 @@ class LogService:
             success=success,
             error_message=error_message,
         )
-        self.session.add(entry)
-        await self.session.flush()
+        await self.client.table("audit_logs").insert(entry.to_payload()).execute()

@@ -1,24 +1,42 @@
-"""SQLAlchemy declarative base."""
+"""Pydantic base models shared across the data layer."""
+
+from __future__ import annotations
 
 from datetime import datetime
+from typing import TypeVar
 
-from sqlalchemy import DateTime, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from pydantic import BaseModel, ConfigDict
 
-
-class Base(DeclarativeBase):
-    """Declarative base for all ORM models."""
+T = TypeVar("T", bound="SupabaseModel")
 
 
-class TimestampMixin:
-    """Adds created_at / updated_at columns with UTC defaults."""
+class SupabaseModel(BaseModel):
+    """Base model for all Supabase-backed entities.
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
+    Provides helpers to construct instances from PostgREST rows (dicts) and to
+    serialize back to plain dicts for REST insert/update payloads.
+    """
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @classmethod
+    def from_row(cls: type[T], row: dict) -> T:
+        """Build a model from a PostgREST row dict."""
+        return cls.model_validate(row)
+
+    def to_payload(self) -> dict:
+        """Return a plain dict suitable for a REST insert/update payload.
+
+        ``None`` values are dropped so that partial updates do not clear
+        columns that were not meant to change.
+        """
+        payload = self.model_dump(exclude_none=False)
+        payload.pop("id", None)
+        return payload
+
+
+class TimestampedModel(SupabaseModel):
+    """Adds created_at/updated_at fields used across several tables."""
+
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

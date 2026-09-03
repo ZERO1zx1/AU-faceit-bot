@@ -1,82 +1,108 @@
 """Match repository."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.logging import get_logger
+from app.models.match import Match, MatchPlayer, MatchResult, ResultSubmission
+from app.repositories.base import BaseRepository
+from supabase import AsyncClient
 
-from app.models.match import Match, MatchPlayer, MatchResult
+logger = get_logger(__name__)
 
 
-class MatchRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
+class MatchRepository(BaseRepository[Match]):
+    model = Match
+    table_name = "matches"
+
+    def __init__(self, client: AsyncClient) -> None:
+        super().__init__(client)
+        self.client = client
 
     async def create(self, match: Match) -> Match:
-        self.session.add(match)
-        await self.session.flush()
-        return match
+        return (await self.insert(match)) or match
 
     async def add_player(self, player: MatchPlayer) -> MatchPlayer:
-        self.session.add(player)
-        await self.session.flush()
+        result = await self.client.table("match_players").insert(player.to_payload()).execute()
+        if result.data:
+            return MatchPlayer.from_row(result.data[0])
         return player
 
     async def get(self, match_id: int) -> Match | None:
-        return await self.session.get(Match, match_id)
+        return await super().get_by_id(match_id)
 
     async def get_by_display_id(self, display_id: str) -> Match | None:
-        result = await self.session.execute(select(Match).where(Match.display_id == display_id))
-        return result.scalar_one_or_none()
+        result = (
+            await self._table()
+            .select("*")
+            .eq("display_id", display_id)
+            .maybe_single()
+            .execute()
+        )
+        return Match.from_row(result.data) if result.data else None
 
     async def get_active(self, guild_id: int) -> Match | None:
-        result = await self.session.execute(
-            select(Match).where(
-                Match.guild_id == guild_id,
-                Match.status.in_(["CREATING", "READY", "IN_PROGRESS"]),
-            )
+        result = (
+            await self._table()
+            .select("*")
+            .eq("guild_id", guild_id)
+            .in_("status", ["CREATING", "READY", "IN_PROGRESS"])
+            .maybe_single()
+            .execute()
         )
-        return result.scalar_one_or_none()
+        return Match.from_row(result.data) if result.data else None
 
     async def get_players(self, match_id: int) -> Sequence[MatchPlayer]:
-        result = await self.session.execute(
-            select(MatchPlayer)
-            .where(MatchPlayer.match_id == match_id)
-            .order_by(MatchPlayer.call_number)
+        result = (
+            await self.client.table("match_players")
+            .select("*")
+            .eq("match_id", match_id)
+            .order("call_number")
+            .execute()
         )
-        return list(result.scalars().all())
+        return [MatchPlayer.from_row(row) for row in result.data or []]
 
     async def get_player_count(self, match_id: int) -> int:
-        result = await self.session.execute(
-            select(MatchPlayer).where(MatchPlayer.match_id == match_id)
+        result = await (
+            self.client.table("match_players").select("id").eq("match_id", match_id).execute()
         )
-        return len(result.all())
+        return len(result.data or [])
 
     async def update_status(self, match_id: int, status: str) -> None:
-        match = await self.get(match_id)
-        if match:
-            match.status = status
-            await self.session.flush()
+        await self._table().update({"status": status}).eq("id", match_id).execute()
 
     async def update_channels(self, match_id: int, text_id: int, voice_id: int) -> None:
-        match = await self.get(match_id)
-        if match:
-            match.text_channel_id = text_id
-            match.voice_channel_id = voice_id
-            await self.session.flush()
+        await (
+            self._table()
+            .update({"text_channel_id": text_id, "voice_channel_id": voice_id})
+            .eq("id", match_id)
+            .execute()
+        )
 
     async def get_next_display_id(self, guild_id: int) -> str:
-        result = await self.session.execute(
-            select(Match)
-            .where(Match.guild_id == guild_id)
-            .order_by(Match.id.desc())
+        result = (
+            await self._table()
+            .select("id")
+            .eq("guild_id", guild_id)
+            .order("id", desc=True)
             .limit(1)
+            .execute()
         )
-        last = result.scalar_one_or_none()
-        seq = (last.id + 1) if last else 1
+        rows = result.data or []
+        seq = (rows[0]["id"] + 1) if rows and rows[0].get("id") else 1
         return f"AU-{seq:08d}"
 
     async def create_result(self, result: MatchResult) -> MatchResult:
-        self.session.add(result)
-        await self.session.flush()
+        res = await self.client.table("match_results").insert(result.to_payload()).execute()
+        if res.data:
+            return MatchResult.from_row(res.data[0])
         return result
+
+    async def create_submission(self, sub: ResultSubmission) -> ResultSubmission:
+        res = (
+            await self.client.table("result_submissions").insert(sub.to_payload()).execute()
+        )
+        if res.data:
+            return ResultSubmission.from_row(res.data[0])
+        return sub

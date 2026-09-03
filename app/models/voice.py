@@ -1,42 +1,30 @@
 """Voice session and voice totals models."""
 
+from __future__ import annotations
+
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Integer, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.base import Base
+from app.models.base import SupabaseModel
 
 
-class VoiceSession(Base):
-    __tablename__ = "voice_sessions"
+class VoiceSession(SupabaseModel):
+    """A single voice-channel attendance window for a player."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    player_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    id: int | None = None
+    guild_id: int
+    player_id: int
+    channel_id: int
 
-    joined_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
-    left_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    joined_at: datetime | None = None
+    left_at: datetime | None = None
+    duration_seconds: int | None = None
 
 
-class VoiceTotal(Base):
-    __tablename__ = "voice_totals"
-    __table_args__ = (
-        UniqueConstraint("guild_id", "player_id", "bucket_date", name="uq_voice_totals_bucket"),
-    )
+class VoiceTotal(SupabaseModel):
+    """Aggregated voice time for a player bucketed by date."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    player_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    bucket_date: Mapped[date] = mapped_column(Date, nullable=False)
-    total_seconds: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    id: int | None = None
+    guild_id: int
+    player_id: int
+    bucket_date: date
+    total_seconds: int = 0

@@ -6,8 +6,8 @@ import discord
 from discord.ext import commands
 
 from app.config import settings
-from app.db import dispose_engine
 from app.logging import get_logger, setup_logging
+from app.supabase_client import dispose_client
 
 logger = get_logger(__name__)
 
@@ -52,7 +52,7 @@ class AUFaceitBot(commands.Bot):
         logger.info("Slash commands synced")
 
     async def close(self):
-        await dispose_engine()
+        await dispose_client()
         await super().close()
 
 

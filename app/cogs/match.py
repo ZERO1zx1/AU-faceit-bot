@@ -5,9 +5,9 @@ import contextlib
 import discord
 from discord.ext import commands
 
-from app.db import SessionFactory
 from app.repositories.guild_repository import GuildRepository
 from app.services.match_service import MatchService
+from app.supabase_client import get_client
 
 
 class MatchCog(commands.Cog):
@@ -15,10 +15,9 @@ class MatchCog(commands.Cog):
         self.bot = bot
 
     async def create_match_channels(self, guild: discord.Guild, match, player_ids: list[int]):
-        settings = None
-        async with SessionFactory() as session:
-            repo = GuildRepository(session)
-            settings = await repo.get_settings(guild.id)
+        client = get_client()
+        repo = GuildRepository(client)
+        settings = await repo.get_settings(guild.id)
         if not settings or not settings.match_category_id:
             return
 
@@ -44,19 +43,16 @@ class MatchCog(commands.Cog):
             f"AU-{match.display_id}", overwrites=overwrites
         )
 
-        async with SessionFactory() as session:
-            svc = MatchService(session)
-            await svc.update_channels(match.id, text_ch.id, voice_ch.id)
-            await svc.set_status(match.id, "READY")
+        svc = MatchService(client)
+        await svc.update_channels(match.id, text_ch.id, voice_ch.id)
+        await svc.set_status(match.id, "READY")
 
-        async with SessionFactory() as session:
-            svc = MatchService(session)
-            players = await svc.get_players(match.id)
-            for p in players:
-                member = guild.get_member(p.player_id)
-                if member:
-                    with contextlib.suppress(discord.HTTPException):
-                        await member.move_to(voice_ch)
+        players = await svc.get_players(match.id)
+        for p in players:
+            member = guild.get_member(p.player_id)
+            if member:
+                with contextlib.suppress(discord.HTTPException):
+                    await member.move_to(voice_ch)
         return text_ch, voice_ch
 
 

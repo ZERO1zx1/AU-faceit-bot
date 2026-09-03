@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.logging import get_logger
 from app.models.player import Player
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.player_repository import PlayerRepository
 from app.utils.validation import valid_among_us_name
+from supabase import AsyncClient
 
 logger = get_logger(__name__)
 
 
 class RegistrationService:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-        self.players = PlayerRepository(session)
-        self.guilds = GuildRepository(session)
+    def __init__(self, client: AsyncClient) -> None:
+        self.client = client
+        self.players = PlayerRepository(client)
+        self.guilds = GuildRepository(client)
 
     async def register(
         self,
@@ -40,14 +39,13 @@ class RegistrationService:
         if not valid_among_us_name(among_us_name):
             raise ValueError("Invalid Among Us name")
 
-        if existing:
-            existing.active = True
-            existing.among_us_name = among_us_name
+        if existing and existing.id is not None:
+            fields: dict = {"active": True, "among_us_name": among_us_name}
             if nickname:
-                existing.nickname = nickname
-            await self.session.flush()
+                fields["nickname"] = nickname
+            updated = await self.players.update(existing.id, fields)
             logger.info("Player re-registered: %s/%s", guild_id, discord_user_id)
-            return existing
+            return updated if updated else existing
 
         player = await self.players.create(
             guild_id, discord_user_id, among_us_name, nickname=nickname, default_elo=default_elo

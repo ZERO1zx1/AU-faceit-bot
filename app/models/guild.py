@@ -1,53 +1,42 @@
 """Guild and GuildSettings models."""
 
-from typing import Optional
+from __future__ import annotations
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.models.base import Base, TimestampMixin
+from app.models.base import TimestampedModel
 
 
-class Guild(TimestampMixin, Base):
-    __tablename__ = "guilds"
+class Guild(TimestampedModel):
+    """A Discord guild (server) that has enabled the bot."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-    settings: Mapped[Optional["GuildSettings"]] = relationship(
-        back_populates="guild", uselist=False, cascade="all, delete-orphan"
-    )
+    id: int
+    enabled: bool = True
 
 
-class GuildSettings(TimestampMixin, Base):
-    __tablename__ = "guild_settings"
+class GuildSettings(TimestampedModel):
+    """Per-guild matchmaking configuration and channel bindings."""
 
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), primary_key=True
-    )
+    guild_id: int
 
-    admin_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    moderator_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    registered_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    admin_role_id: int | None = None
+    moderator_role_id: int | None = None
+    registered_role_id: int | None = None
 
-    register_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    register_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    register_channel_id: int | None = None
+    register_message_id: int | None = None
 
-    queue_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    queue_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    queue_channel_id: int | None = None
+    queue_message_id: int | None = None
 
-    leaderboard_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    leaderboard_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    leaderboard_channel_id: int | None = None
+    leaderboard_message_id: int | None = None
 
-    match_category_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    match_category_id: int | None = None
 
-    log_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    log_channel_id: int | None = None
 
-    default_elo: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
-    win_elo: Mapped[int] = mapped_column(Integer, default=8, nullable=False)
-    loss_elo: Mapped[int] = mapped_column(Integer, default=-6, nullable=False)
+    default_elo: int = 1000
+    win_elo: int = 8
+    loss_elo: int = -6
 
-    queue_size: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
-    nickname_format: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    guild: Mapped[Guild] = relationship(back_populates="settings")
+    queue_size: int = 15
+    nickname_format: str | None = None

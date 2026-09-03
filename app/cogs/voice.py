@@ -3,8 +3,8 @@
 import discord
 from discord.ext import commands
 
-from app.db import SessionFactory
 from app.services.voice_service import VoiceService
+from app.supabase_client import get_client
 
 
 class VoiceCog(commands.Cog):
@@ -21,28 +21,21 @@ class VoiceCog(commands.Cog):
         if member.bot:
             return
 
+        svc = VoiceService(get_client())
+
         if before.channel is None and after.channel is not None:
-            async with SessionFactory() as session:
-                svc = VoiceService(session)
-                await svc.start_session(member.guild.id, member.id, after.channel.id)
-                await session.commit()
+            await svc.start_session(member.guild.id, member.id, after.channel.id)
 
         elif before.channel is not None and after.channel is None:
-            async with SessionFactory() as session:
-                svc = VoiceService(session)
-                await svc.end_session(member.guild.id, member.id)
-                await session.commit()
+            await svc.end_session(member.guild.id, member.id)
 
         elif (
             before.channel is not None
             and after.channel is not None
             and before.channel != after.channel
         ):
-            async with SessionFactory() as session:
-                svc = VoiceService(session)
-                await svc.end_session(member.guild.id, member.id)
-                await svc.start_session(member.guild.id, member.id, after.channel.id)
-                await session.commit()
+            await svc.end_session(member.guild.id, member.id)
+            await svc.start_session(member.guild.id, member.id, after.channel.id)
 
 
 async def setup(bot):

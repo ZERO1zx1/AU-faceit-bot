@@ -1,30 +1,26 @@
 """Panel model for persistent custom panels."""
 
+from __future__ import annotations
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.base import Base
+from app.models.base import SupabaseModel
 
 
-class Panel(Base):
-    __tablename__ = "panels"
+class Panel(SupabaseModel):
+    """A persistent custom embed panel configured by a server admin."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    id: int | None = None
+    guild_id: int
+    type: str
 
-    channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    channel_id: int | None = None
+    message_id: int | None = None
 
-    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    color: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    title: str | None = None
+    description: str | None = None
+    color: int | None = None
 
-    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    footer: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    thumbnail_url: str | None = None
+    image_url: str | None = None
+    footer: str | None = None
 
-    configuration_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    configuration_json: str | None = None
