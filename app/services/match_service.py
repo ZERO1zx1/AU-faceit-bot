@@ -10,9 +10,7 @@ from app.logging import get_logger
 from app.models.match import Match, MatchPlayer
 from app.repositories.match_repository import MatchRepository
 from app.repositories.player_repository import PlayerRepository
-from app.utils.constants import (
-    MATCH_STATUS_CREATING,
-)
+from app.utils.constants import MATCH_STATUS_CREATING
 
 logger = get_logger(__name__)
 
@@ -49,7 +47,10 @@ class MatchService:
 
         match.average_elo = elo_sum // len(player_ids) if player_ids else 0
         await self.session.commit()
-        logger.info("Match created: %s (guild=%s, players=%d)", display_id, guild_id, len(player_ids))
+        logger.info(
+            "Match created: %s (guild=%s, players=%d)",
+            display_id, guild_id, len(player_ids),
+        )
         return match
 
     async def get_match(self, match_id: int) -> Match | None:

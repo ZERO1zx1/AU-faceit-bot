@@ -83,7 +83,8 @@ def queue_embed(count: int, max_size: int = 15, avg_elo: int = 0):
 def match_embed(match, players: list):
     call_lines = []
     for p in players:
-        name = (p.player.among_us_name if getattr(p, "player", None) else None) or f"Player #{p.player_id}"
+        player = getattr(p, "player", None)
+        name = (player.among_us_name if player else None) or f"Player #{p.player_id}"
         call_lines.append(f"CALL {p.call_number:02d} — {name}")
     description = "**STATUS**\nIN PROGRESS\n\n**PLAYERS**\n\n" + "\n".join(call_lines)
     if match.average_elo:

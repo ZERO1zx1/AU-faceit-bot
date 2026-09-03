@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -21,6 +21,6 @@ class QueueEntry(Base):
     player_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    joined_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    joined_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     queue_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="WAITING", nullable=False)

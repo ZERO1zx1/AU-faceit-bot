@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +50,6 @@ class Player(TimestampMixin, Base):
 
     total_voice_seconds: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
-    registered_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    registered_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     banned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

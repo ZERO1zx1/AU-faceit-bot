@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -21,4 +21,4 @@ class AuditLog(Base):
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())

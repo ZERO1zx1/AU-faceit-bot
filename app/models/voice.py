@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import BigInteger, Date, ForeignKey, Integer, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -20,7 +20,7 @@ class VoiceSession(Base):
     )
     channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
-    joined_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    joined_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     left_at: Mapped[datetime | None] = mapped_column(nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

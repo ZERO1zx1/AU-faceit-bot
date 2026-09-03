@@ -12,7 +12,12 @@ class VoiceCog(commands.Cog):
         self.bot = bot
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
         if member.bot:
             return
 
@@ -28,7 +33,11 @@ class VoiceCog(commands.Cog):
                 await svc.end_session(member.guild.id, member.id)
                 await session.commit()
 
-        elif before.channel is not None and after.channel is not None and before.channel != after.channel:
+        elif (
+            before.channel is not None
+            and after.channel is not None
+            and before.channel != after.channel
+        ):
             async with SessionFactory() as session:
                 svc = VoiceService(session)
                 await svc.end_session(member.guild.id, member.id)

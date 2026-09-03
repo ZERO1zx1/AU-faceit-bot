@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,7 +27,7 @@ class Match(Base):
     display_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
 
     status: Mapped[str] = mapped_column(String(20), default="CREATING", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
@@ -87,7 +88,7 @@ class MatchResult(Base):
     screenshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
     approved_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    submitted_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    submitted_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     match: Mapped[Match] = relationship(back_populates="result")
@@ -108,4 +109,4 @@ class ResultSubmission(Base):
     impostor_player_ids: Mapped[str] = mapped_column(Text, nullable=False)
     screenshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="PENDING", nullable=False)
-    submitted_at: Mapped[datetime] = mapped_column(nullable=False, server_default="now()")
+    submitted_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())

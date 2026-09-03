@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
-
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
-T = TypeVar("T", bound=DeclarativeBase)
 
-
-class BaseRepository(Generic[T]):
+class BaseRepository[T: DeclarativeBase]:
     model: type[T]
 
     def __init__(self, session: AsyncSession) -> None:

@@ -40,7 +40,9 @@ class MatchRepository:
 
     async def get_players(self, match_id: int) -> Sequence[MatchPlayer]:
         result = await self.session.execute(
-            select(MatchPlayer).where(MatchPlayer.match_id == match_id).order_by(MatchPlayer.call_number)
+            select(MatchPlayer)
+            .where(MatchPlayer.match_id == match_id)
+            .order_by(MatchPlayer.call_number)
         )
         return list(result.scalars().all())
 

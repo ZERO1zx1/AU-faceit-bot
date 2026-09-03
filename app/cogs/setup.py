@@ -1,4 +1,4 @@
-"""Setup cog — /setup-server, /setup-register, /setup-faceit-level, /setup-queue, /setup-leaderboard."""
+"""Setup cog — server, register, level, queue and leaderboard setup commands."""
 
 import discord
 from discord.ext import commands
@@ -7,6 +7,12 @@ from sqlalchemy import select
 from app.db import SessionFactory
 from app.models.level import LevelRole
 from app.repositories.guild_repository import GuildRepository
+
+DEFAULT_LEVEL_BOUNDARIES = {
+    1: (0, 799), 2: (800, 899), 3: (900, 999), 4: (1000, 1099),
+    5: (1100, 1199), 6: (1200, 1299), 7: (1300, 1399), 8: (1400, 1499),
+    9: (1500, 1699), 10: (1700, 999999),
+}
 
 
 class SetupCog(commands.Cog):
@@ -31,7 +37,9 @@ class SetupCog(commands.Cog):
         registered_role = discord.utils.get(guild.roles, name="AU Registered")
         if not registered_role:
             try:
-                registered_role = await guild.create_role(name="AU Registered", color=discord.Color.green())
+                registered_role = await guild.create_role(
+                    name="AU Registered", color=discord.Color.green()
+                )
             except discord.HTTPException:
                 return await ctx.send("Failed to create AU Registered role.")
 
@@ -77,20 +85,20 @@ class SetupCog(commands.Cog):
         msg = await ctx.send(embed=embed, view=view)
         async with SessionFactory() as session:
             repo = GuildRepository(session)
-            await repo.upsert_settings(ctx.guild.id, register_channel_id=ctx.channel.id, register_message_id=msg.id)
+            await repo.upsert_settings(
+                ctx.guild.id,
+                register_channel_id=ctx.channel.id,
+                register_message_id=msg.id,
+            )
             await session.commit()
         await ctx.send("✅ Registration panel created!")
 
     @commands.command(name="setup-faceit-level")
     @commands.has_permissions(administrator=True)
     async def setup_levels(self, ctx: commands.Context):
-        DEFAULT_BOUNDARIES = {
-            1: (0, 799), 2: (800, 899), 3: (900, 999), 4: (1000, 1099),
-            5: (1100, 1199), 6: (1200, 1299), 7: (1300, 1399), 8: (1400, 1499),
-            9: (1500, 1699), 10: (1700, 999999),
-        }
+        default_boundaries = DEFAULT_LEVEL_BOUNDARIES
         async with SessionFactory() as session:
-            for level, (min_elo, max_elo) in DEFAULT_BOUNDARIES.items():
+            for level, (min_elo, max_elo) in default_boundaries.items():
                 result = await session.execute(
                     select(LevelRole).where(
                         LevelRole.guild_id == ctx.guild.id, LevelRole.level == level
@@ -123,7 +131,11 @@ class SetupCog(commands.Cog):
         msg = await ctx.send(embed=embed, view=view)
         async with SessionFactory() as session:
             repo = GuildRepository(session)
-            await repo.upsert_settings(ctx.guild.id, queue_channel_id=ctx.channel.id, queue_message_id=msg.id)
+            await repo.upsert_settings(
+                ctx.guild.id,
+                queue_channel_id=ctx.channel.id,
+                queue_message_id=msg.id,
+            )
             await session.commit()
         await ctx.send("✅ Queue panel created!")
 
