@@ -74,3 +74,7 @@ class AdminCog(commands.Cog):
             .execute()
         )
         await ctx.send(f"✅ {member.mention} unbanned")
+
+
+async def setup(bot):
+    await bot.add_cog(AdminCog(bot))

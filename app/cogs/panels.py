@@ -78,3 +78,7 @@ class PanelsCog(commands.Cog):
                     pass
         await client.table("panels").delete().eq("id", panel_id).execute()
         await ctx.send("✅ Panel deleted.")
+
+
+async def setup(bot):
+    await bot.add_cog(PanelsCog(bot))

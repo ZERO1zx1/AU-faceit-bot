@@ -137,3 +137,7 @@ class SetupCog(commands.Cog):
         repo = GuildRepository(get_client())
         await repo.upsert_settings(ctx.guild.id, leaderboard_channel_id=ctx.channel.id)
         await ctx.send("✅ Leaderboard channel set! Use `/leaderboard` to post.")
+
+
+async def setup(bot):
+    await bot.add_cog(SetupCog(bot))

@@ -25,7 +25,7 @@ def _client_kwargs() -> dict:
             "SUPABASE_URL and SUPABASE_KEY must be set in the environment/.env "
             "to use the Supabase REST API."
         )
-    return {"supabase_url": url, "supabase_key": key, "postgrest_client_timeout": 30}
+    return {"supabase_url": url, "supabase_key": key}
 
 
 @lru_cache

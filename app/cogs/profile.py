@@ -62,3 +62,7 @@ class ProfileCog(commands.Cog):
             color=discord.Color.blurple(),
         )
         await ctx.send(embed=embed)
+
+
+async def setup(bot):
+    await bot.add_cog(ProfileCog(bot))
