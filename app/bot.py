@@ -7,7 +7,7 @@ from discord.ext import commands
 
 from app.config import settings
 from app.logging import get_logger, setup_logging
-from app.supabase_client import dispose_client
+from app.supabase_client import dispose_client, init_client
 
 logger = get_logger(__name__)
 
@@ -39,6 +39,7 @@ class AUFaceitBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
+        await init_client()
         for ext in COGS:
             try:
                 await self.load_extension(ext)
