@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from app.logging import get_logger
-from app.models.match import Match, ResultSubmission
+from app.models.match import Match, MatchPlayer, ResultSubmission
+from app.models.player import Player
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.match_repository import MatchRepository
 from app.repositories.player_repository import PlayerRepository
@@ -32,13 +34,13 @@ class ResultService:
     async def get_match(self, match_id: int) -> Match | None:
         return await self.match_repo.get(match_id)
 
-    async def get_match_players(self, match_id: int):
+    async def get_match_players(self, match_id: int) -> Sequence[MatchPlayer]:
         return await self.match_repo.get_players(match_id)
 
-    async def get_player(self, guild_id: int, discord_user_id: int):
+    async def get_player(self, guild_id: int, discord_user_id: int) -> Player | None:
         return await self.players.get(guild_id, discord_user_id)
 
-    async def get_player_by_id(self, player_id: int):
+    async def get_player_by_id(self, player_id: int) -> Player | None:
         return await self.players.get_by_id(player_id)
 
     async def submit_result(
@@ -96,16 +98,15 @@ class ResultService:
             "p_impostor_player_ids": json.dumps(unique_impostors),
             "p_screenshot_url": screenshot_url,
         }
-        res = await self.client.rpc("submit_match_result", params).execute()
-        rows = res.data if res.data else None
-        if isinstance(rows, list) and rows:
+        row = await self.submissions.submit(params)
+        if row is not None:
             logger.info(
                 "Result submitted: match=%s by=%s winner=%s",
                 match_id,
                 submitted_by,
                 winner_side,
             )
-            return ResultSubmission.from_row(rows[0])
+            return ResultSubmission.from_row(row)
         raise RuntimeError("submit_match_result RPC returned no submission")
 
     async def approve_result(
@@ -113,6 +114,7 @@ class ResultService:
         match_id: int,
         *,
         approved_by: int,
+        guild_id: int | None = None,
         win_elo: int | None = None,
         loss_elo: int | None = None,
     ) -> Match:
@@ -126,18 +128,20 @@ class ResultService:
         match = await self.match_repo.get(match_id)
         if match is None:
             raise ValueError("Match олдсонгүй.")
+        if guild_id is not None and match.guild_id != guild_id:
+            raise ValueError("Энэ серверт тохирох match олдсонгүй.")
 
         settings = await self.guilds.get_settings(match.guild_id)
         win = win_elo if win_elo is not None else (settings.win_elo if settings else 8)
         loss = loss_elo if loss_elo is not None else (settings.loss_elo if settings else -6)
 
-        params = {
+        params: dict[str, object] = {
             "p_match_id": match_id,
             "p_approved_by": approved_by,
             "p_win_elo": win,
             "p_loss_elo": loss,
         }
-        await self.client.rpc("approve_match_result", params).execute()
+        await self.submissions.approve(params)
         logger.info(
             "Result approved: match=%s by=%s win=%d loss=%d",
             match_id,
@@ -147,16 +151,32 @@ class ResultService:
         )
         return match
 
-    async def reject_result(self, match_id: int, *, rejected_by: int) -> Match:
-        """Atomically reject the pending submission and reopen the match."""
+    async def reject_result(
+        self,
+        match_id: int,
+        *,
+        rejected_by: int,
+        guild_id: int | None = None,
+        reason: str | None = None,
+    ) -> Match:
+        """Atomically reject the pending submission and reopen the match.
+
+        The moderator and (optional) reason are persisted on the submission so
+        the rejection is auditable and cannot be accidentally approved later.
+        """
         match = await self.match_repo.get(match_id)
         if match is None:
             raise ValueError("Match олдсонгүй.")
-        await self.client.rpc(
-            "reject_match_result",
-            {"p_match_id": match_id, "p_rejected_by": rejected_by},
-        ).execute()
-        logger.info("Result rejected: match=%s by=%s", match_id, rejected_by)
+        if guild_id is not None and match.guild_id != guild_id:
+            raise ValueError("Энэ серверт тохирох match олдсонгүй.")
+        await self.submissions.reject(
+            {
+                "p_match_id": match_id,
+                "p_rejected_by": rejected_by,
+                "p_reason": reason,
+            }
+        )
+        logger.info("Result rejected: match=%s by=%s reason=%r", match_id, rejected_by, reason)
         return match
 
     async def set_approval_message(self, submission_id: int, message_id: int) -> None:

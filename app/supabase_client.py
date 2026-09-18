@@ -47,7 +47,12 @@ async def dispose_client() -> None:
     if _client is None:
         return
     try:
-        await _client.aclose()
+        postgrest = getattr(_client, "postgrest", None)
+        if postgrest is not None:
+            await postgrest.aclose()
+        realtime = getattr(_client, "realtime", None)
+        if realtime is not None:
+            await realtime.close()
     except Exception as exc:  # pragma: no cover - best effort on shutdown
         logger.warning("Error closing Supabase client: %s", exc)
     finally:

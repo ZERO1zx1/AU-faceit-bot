@@ -23,7 +23,7 @@ async def _edit_embed(panel: Panel, guild: discord.Guild) -> bool:
     if not panel.channel_id or not panel.message_id:
         return False
     channel = guild.get_channel(panel.channel_id)
-    if not channel:
+    if not isinstance(channel, discord.TextChannel):
         return False
     try:
         message = await channel.fetch_message(panel.message_id)
@@ -43,7 +43,7 @@ class PanelsCog(commands.Cog):
         default_permissions=discord.Permissions(administrator=True),
     )
 
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
     @panel.command(name="create", description="Custom embed panel үүсгэж байрлуулах.")
@@ -67,6 +67,9 @@ class PanelsCog(commands.Cog):
         image: str | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         client = get_client()
         try:
             parsed_color = parse_color(color) if color else None
@@ -75,7 +78,7 @@ class PanelsCog(commands.Cog):
             return
 
         panel = Panel(
-            guild_id=interaction.guild_id,
+            guild_id=guild.id,
             type="custom",
             channel_id=channel.id,
             title=title,
@@ -102,7 +105,7 @@ class PanelsCog(commands.Cog):
             await svc.set_message_id(created.id, message.id)
 
         await LogService(client, self.bot).log(
-            interaction.guild_id,
+            guild.id,
             "PANEL_CREATE",
             actor_id=interaction.user.id,
             target_entity=created.type or "custom",
@@ -133,14 +136,17 @@ class PanelsCog(commands.Cog):
         image: str | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         client = get_client()
         svc = PanelService(client)
-        panel = await svc.get(interaction.guild_id, panel_id)
+        panel = await svc.get(guild.id, panel_id)
         if panel is None:
             await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
             return
 
-        fields: dict = {}
+        fields: dict[str, object] = {}
         if title is not None:
             fields["title"] = title
         if description is not None:
@@ -157,7 +163,7 @@ class PanelsCog(commands.Cog):
                 return
 
         try:
-            updated = await svc.update(interaction.guild_id, panel_id, fields)
+            updated = await svc.update(guild.id, panel_id, fields)
         except EmbedValidationError as e:
             await interaction.followup.send(str(e), ephemeral=True)
             return
@@ -166,7 +172,7 @@ class PanelsCog(commands.Cog):
             return
 
         try:
-            await _edit_embed(updated, interaction.guild)
+            await _edit_embed(updated, guild)
         except EmbedValidationError as e:
             await interaction.followup.send(
                 f"DB шинэчлэгдсэн ч embed буруу: {e}", ephemeral=True
@@ -174,7 +180,7 @@ class PanelsCog(commands.Cog):
             return
 
         await LogService(client, self.bot).log(
-            interaction.guild_id,
+            guild.id,
             "PANEL_EDIT",
             actor_id=interaction.user.id,
             target_entity=str(panel_id),
@@ -187,29 +193,32 @@ class PanelsCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def panel_delete(self, interaction: discord.Interaction, panel_id: int) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         client = get_client()
         svc = PanelService(client)
-        panel = await svc.get(interaction.guild_id, panel_id)
+        panel = await svc.get(guild.id, panel_id)
         if panel is None:
             await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
             return
 
         if panel.message_id:
-            channel = interaction.guild.get_channel(panel.channel_id) if panel.channel_id else None
-            if channel:
+            channel = guild.get_channel(panel.channel_id) if panel.channel_id else None
+            if isinstance(channel, discord.TextChannel):
                 try:
                     msg = await channel.fetch_message(panel.message_id)
                     await msg.delete()
                 except discord.HTTPException:
                     pass
 
-        deleted = await svc.delete(interaction.guild_id, panel_id)
+        deleted = await svc.delete(guild.id, panel_id)
         if not deleted:
             await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
             return
 
         await LogService(client, self.bot).log(
-            interaction.guild_id,
+            guild.id,
             "PANEL_DELETE",
             actor_id=interaction.user.id,
             target_entity=str(panel_id),
@@ -221,7 +230,10 @@ class PanelsCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def panel_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        panels = await PanelService(get_client()).list_for_guild(interaction.guild_id)
+        guild = interaction.guild
+        if guild is None:
+            return
+        panels = await PanelService(get_client()).list_for_guild(guild.id)
         if not panels:
             await interaction.followup.send("Panel байхгүй байна.", ephemeral=True)
             return
@@ -238,5 +250,5 @@ class PanelsCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(PanelsCog(bot))

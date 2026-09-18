@@ -6,7 +6,9 @@ import json
 import random
 
 from app.logging import get_logger
-from app.models.match import Match
+from app.models.guild import GuildSettings
+from app.models.match import Match, MatchPlayer
+from app.models.player import Player
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.match_repository import MatchRepository
 from app.repositories.player_repository import PlayerRepository
@@ -35,10 +37,10 @@ class MatchService:
         self.players = PlayerRepository(client)
         self.guilds = GuildRepository(client)
 
-    async def get_guild_settings(self, guild_id: int):
+    async def get_guild_settings(self, guild_id: int) -> GuildSettings | None:
         return await self.guilds.get_settings(guild_id)
 
-    async def get_player(self, player_id: int):
+    async def get_player(self, player_id: int) -> Player | None:
         return await self.players.get_by_id(player_id)
 
     async def claim_from_queue(self, guild_id: int) -> tuple[Match, list[int]] | None:
@@ -48,15 +50,10 @@ class MatchService:
         match/player inserts. ``None`` means the guild does not currently have
         enough eligible players; no queue rows are removed in that case.
         """
-        res = await self.client.rpc(
-            "claim_match_from_queue", {"p_guild_id": guild_id}
-        ).execute()
-        data = res.data
+        data = await self.match_repo.claim_from_queue(guild_id)
         if not data:
             return None
-        if isinstance(data, list):
-            data = data[0] if data else None
-        if not isinstance(data, dict) or not isinstance(data.get("match"), dict):
+        if not isinstance(data.get("match"), dict):
             raise RuntimeError("claim_match_from_queue RPC returned an invalid payload")
 
         match = Match.from_row(data["match"])
@@ -79,14 +76,11 @@ class MatchService:
         shuffled = list(player_ids)
         random.shuffle(shuffled)
 
-        params = {
-            "p_guild_id": guild_id,
-            "p_player_ids": json.dumps(shuffled),
-        }
-        res = await self.client.rpc("create_match", params).execute()
-        data = res.data if res.data else None
-        if isinstance(data, list) and data:
-            match = Match.from_row(data[0])
+        row = await self.match_repo.create_match_from_ids(
+            guild_id, json.dumps(shuffled)
+        )
+        if row:
+            match = Match.from_row(row)
             logger.info(
                 "Match created: %s (guild=%s, players=%d)",
                 match.display_id, guild_id, len(player_ids),
@@ -100,13 +94,13 @@ class MatchService:
     async def get_active(self, guild_id: int) -> Match | None:
         return await self.match_repo.get_active(guild_id)
 
-    async def get_players(self, match_id: int) -> list:
+    async def get_players(self, match_id: int) -> list[MatchPlayer]:
         return list(await self.match_repo.get_players(match_id))
 
-    async def update_channels(self, match_id: int, text_id: int, voice_id: int):
+    async def update_channels(self, match_id: int, text_id: int, voice_id: int) -> None:
         await self.match_repo.update_channels(match_id, text_id, voice_id)
 
-    async def set_status(self, match_id: int, status: str):
+    async def set_status(self, match_id: int, status: str) -> None:
         await self.match_repo.update_status(match_id, status)
 
     async def finalize_provisioning(self, match_id: int, text_id: int, voice_id: int) -> None:

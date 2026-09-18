@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 
 from app.logging import get_logger
+from app.models.match import Match
 from app.services.match_service import MatchService
 from app.services.setup_service import SetupService
 from app.supabase_client import get_client
@@ -15,21 +16,31 @@ logger = get_logger(__name__)
 
 
 class MatchCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._locks: dict[int, asyncio.Lock] = {}
 
-    async def create_match_channels(self, guild: discord.Guild, match, player_ids: list[int]):
+    async def create_match_channels(
+        self,
+        guild: discord.Guild,
+        match: Match,
+        player_ids: list[int],
+    ) -> tuple[discord.TextChannel | None, discord.VoiceChannel | None]:
         client = get_client()
         settings = await SetupService(client).get_settings(guild.id)
-        if not settings or not settings.match_category_id:
+        if settings is None or settings.match_category_id is None:
+            return None, None
+        match_id = match.id
+        if match_id is None:
             return None, None
 
         category = guild.get_channel(settings.match_category_id)
-        if not category:
+        if not isinstance(category, discord.CategoryChannel):
             return None, None
 
-        overwrites = {
+        overwrites: dict[
+            discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite
+        ] = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True),
         }
@@ -53,7 +64,7 @@ class MatchCog(commands.Cog):
             voice_ch = await category.create_voice_channel(
                 f"AU-{match.display_id}", overwrites=overwrites
             )
-            await svc.finalize_provisioning(match.id, text_ch.id, voice_ch.id)
+            await svc.finalize_provisioning(match_id, text_ch.id, voice_ch.id)
         except Exception:
             for channel in (voice_ch, text_ch):
                 if channel is not None:
@@ -62,7 +73,7 @@ class MatchCog(commands.Cog):
             logger.exception("Match channel provisioning failed and was rolled back: %s", match.id)
             raise
 
-        match_players = await svc.get_players(match.id)
+        match_players = await svc.get_players(match_id)
         for mp in match_players:
             player = await svc.get_player(mp.player_id)
             if not player or player.guild_id != guild.id:
@@ -73,7 +84,7 @@ class MatchCog(commands.Cog):
                     await member.move_to(voice_ch)
         return text_ch, voice_ch
 
-    async def start_from_queue(self, guild: discord.Guild):
+    async def start_from_queue(self, guild: discord.Guild) -> None:
         """Claim a full queue and create its match atomically, then provision channels."""
         lock = self._locks.setdefault(guild.id, asyncio.Lock())
         async with lock:
@@ -83,6 +94,9 @@ class MatchCog(commands.Cog):
             if claimed is None:
                 return
             match, selected = claimed
+            match_id = match.id
+            if match_id is None:
+                return
             try:
                 text_ch, _voice_ch = await self.create_match_channels(guild, match, selected)
             except Exception:
@@ -90,10 +104,10 @@ class MatchCog(commands.Cog):
                 text_ch = None
 
             if text_ch is None:
-                await match_svc.requeue_players(match.id)
+                await match_svc.requeue_players(match_id)
                 return
 
-            players = await match_svc.get_players(match.id)
+            players = await match_svc.get_players(match_id)
             lines = []
             for mp in players:
                 p = await match_svc.get_player(mp.player_id)
@@ -108,5 +122,5 @@ class MatchCog(commands.Cog):
                 await text_ch.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(MatchCog(bot))

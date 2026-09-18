@@ -10,108 +10,135 @@ from __future__ import annotations
 
 import copy
 import json
+from typing import Any, cast
 
 
 class _Response:
-    def __init__(self, data):
+    def __init__(self, data: Any) -> None:
         self.data = data
 
 
 class _QueryBuilder:
     """Chainable filter/limiter with a terminal ``execute()``."""
 
-    def __init__(self, fake, table_name, columns=None, action="select"):
+    def __init__(
+        self,
+        fake: FakeSupabaseClient,
+        table_name: str,
+        columns: list[str] | None = None,
+        action: str = "select",
+    ) -> None:
         self._fake = fake
         self._table = table_name
         self._columns = columns or ["*"]
         self._action = action  # "select" | "insert" | "update" | "delete"
-        self._filters = []  # list of (col, op, value)
-        self._orders = []  # list of (col, desc)
-        self._limit = None
-        self._payload = None
+        self._filters: list[tuple[str, str, Any]] = []
+        self._orders: list[tuple[str, bool]] = []
+        self._limit: int | None = None
+        self._payload: Any = None
         self._single = False
 
     # -- filters ----------------------------------------------------------
-    def eq(self, col, value):
+    def eq(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, "==", value))
         return self
 
-    def neq(self, col, value):
+    def neq(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, "!=", value))
         return self
 
-    def in_(self, col, values):
+    def in_(self, col: str, values: list[Any]) -> _QueryBuilder:
         self._filters.append((col, "in", list(values)))
         return self
 
-    def is_(self, col, value):
+    def is_(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, "is", value))
         return self
 
-    def gt(self, col, value):
+    def gt(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, ">", value))
         return self
 
-    def gte(self, col, value):
+    def gte(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, ">=", value))
         return self
 
-    def lt(self, col, value):
+    def lt(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, "<", value))
         return self
 
-    def lte(self, col, value):
+    def lte(self, col: str, value: Any) -> _QueryBuilder:
         self._filters.append((col, "<=", value))
         return self
 
-    def limit(self, n):
+    def limit(self, n: int) -> _QueryBuilder:
         self._limit = n
         return self
 
-    def offset(self, n):
+    def offset(self, n: int) -> _QueryBuilder:
         return self
 
-    def order(self, col, *, desc=False, foreign_table=None, nullsfirst=None, nullslast=None):
+    def order(
+        self,
+        col: str,
+        *,
+        desc: bool = False,
+        foreign_table: str | None = None,
+        nullsfirst: bool | None = None,
+        nullslast: bool | None = None,
+    ) -> _QueryBuilder:
         self._orders.append((col, desc))
         return self
 
-    def maybe_single(self):
+    def maybe_single(self) -> _QueryBuilder:
         self._single = True
         self._limit = 1
         return self
 
-    def single(self):
+    def single(self) -> _QueryBuilder:
         self._single = True
         self._limit = 1
         return self
 
-    def select(self, *cols):
+    def select(self, *cols: str) -> _QueryBuilder:
         if cols:
             self._columns = list(cols)
         return self
 
     # -- mutations --------------------------------------------------------
-    def insert(self, payload, *, returning="representation", count=None):
+    def insert(
+        self,
+        payload: dict[str, Any] | list[dict[str, Any]],
+        *,
+        returning: str = "representation",
+        count: bool | None = None,
+    ) -> _QueryBuilder:
         self._action = "insert"
         self._payload = payload
         return self
 
-    def update(self, payload, *, count=None):
+    def update(
+        self, payload: dict[str, Any], *, count: bool | None = None
+    ) -> _QueryBuilder:
         self._action = "update"
         self._payload = payload
         return self
 
-    def delete(self, *, count=None, returning="representation"):
+    def delete(
+        self, *, count: bool | None = None, returning: str = "representation"
+    ) -> _QueryBuilder:
         self._action = "delete"
         return self
 
-    def upsert(self, payload, *args, **kwargs):
+    def upsert(
+        self, payload: dict[str, Any], *args: Any, **kwargs: Any
+    ) -> _QueryBuilder:
         self._action = "upsert"
         self._payload = payload
         return self
 
     # -- execution --------------------------------------------------------
-    def _match(self, row):
+    def _match(self, row: dict[str, Any]) -> bool:
         for col, op, value in self._filters:
             actual = row.get(col)
             if op == "==" and actual != value:
@@ -135,7 +162,7 @@ class _QueryBuilder:
                 return False
         return True
 
-    async def execute(self):
+    async def execute(self) -> _Response:
         if self._action.startswith("rpc:"):
             fn = self._action.split(":", 1)[1]
             return self._fake._run_rpc(fn, self._payload)
@@ -143,7 +170,7 @@ class _QueryBuilder:
         table = self._fake.tables.setdefault(self._table, [])
 
         if self._action == "insert":
-            inserted = []
+            inserted: list[dict[str, Any]] = []
             payloads = self._payload if isinstance(self._payload, list) else [self._payload]
             for payload in payloads:
                 row = dict(payload)
@@ -153,7 +180,7 @@ class _QueryBuilder:
             return _Response(inserted)
 
         if self._action == "update":
-            updated = []
+            updated: list[dict[str, Any]] = []
             for row in table:
                 if self._match(row):
                     row.update(copy.deepcopy(self._payload))
@@ -161,8 +188,8 @@ class _QueryBuilder:
             return _Response(updated)
 
         if self._action == "delete":
-            kept = []
-            deleted = []
+            kept: list[dict[str, Any]] = []
+            deleted: list[dict[str, Any]] = []
             for row in table:
                 if self._match(row):
                     deleted.append(copy.deepcopy(row))
@@ -193,8 +220,8 @@ class _QueryBuilder:
 class FakeSupabaseClient:
     """In-memory stand-in for ``supabase.AsyncClient``."""
 
-    def __init__(self):
-        self.tables: dict[str, list[dict]] = {}
+    def __init__(self) -> None:
+        self.tables: dict[str, list[dict[str, Any]]] = {}
         self._counter = 1000
         self.calls: list[str] = []
 
@@ -211,21 +238,21 @@ class FakeSupabaseClient:
         return self.table(table_name)
 
     # -- RPC -----------------------------------------------------------------
-    def rpc(self, fn_name: str, params: dict) -> _QueryBuilder:
+    def rpc(self, fn_name: str, params: dict[str, Any]) -> _QueryBuilder:
         self.calls.append(f"rpc:{fn_name}")
         builder = _QueryBuilder(self, "$rpc", action=f"rpc:{fn_name}")
         builder._payload = params
         return builder
 
-    def _run_rpc(self, fn_name: str, params: dict) -> _Response:
+    def _run_rpc(self, fn_name: str, params: dict[str, Any]) -> _Response:
         handler = getattr(self, f"_rpc_{fn_name}", None)
         if handler is None:
             raise NotImplementedError(f"RPC {fn_name} not implemented in fake")
-        return handler(params)
+        return cast(_Response, handler(params))
 
     # -- RPC implementations ----------------------------------------------
 
-    def _rpc_claim_match_from_queue(self, params) -> _Response:
+    def _rpc_claim_match_from_queue(self, params: dict[str, Any]) -> _Response:
         guild_id = params["p_guild_id"]
         settings = next(
             (
@@ -238,7 +265,7 @@ class FakeSupabaseClient:
         if settings is None:
             raise ValueError("Guild settings not found")
         queue_size = int(settings.get("queue_size", 15))
-        players = {
+        players: dict[Any, dict[str, Any]] = {
             row["id"]: row
             for row in self.tables.setdefault("players", [])
             if row.get("guild_id") == guild_id
@@ -269,7 +296,7 @@ class FakeSupabaseClient:
         ).data[0]
         return _Response({"match": copy.deepcopy(created), "player_ids": player_ids})
 
-    def _rpc_pop_queue_entries(self, params) -> _Response:
+    def _rpc_pop_queue_entries(self, params: dict[str, Any]) -> _Response:
         guild_id = params["p_guild_id"]
         queue = self.tables.setdefault("queue_entries", [])
         popped = [row["player_id"] for row in queue
@@ -280,13 +307,13 @@ class FakeSupabaseClient:
         ]
         return _Response(popped)
 
-    def _rpc_create_match(self, params) -> _Response:
+    def _rpc_create_match(self, params: dict[str, Any]) -> _Response:
         guild_id = params["p_guild_id"]
         player_ids = json.loads(params["p_player_ids"])
         matches = self.tables.setdefault("matches", [])
         match_id = self.next_id()
         seq = len(matches) + 1
-        match = {
+        match: dict[str, Any] = {
             "id": match_id,
             "guild_id": guild_id,
             "display_id": f"AU-{seq:08d}",
@@ -317,7 +344,7 @@ class FakeSupabaseClient:
         match["average_elo"] = elo_sum // len(player_ids) if player_ids else 0
         return _Response([copy.deepcopy(match)])
 
-    def _rpc_apply_match_result(self, params) -> _Response:
+    def _rpc_apply_match_result(self, params: dict[str, Any]) -> _Response:
         players_list = json.loads(params["p_players"])
         winner_side = params["p_winner_side"]
         win_delta = params["p_win_delta"]
@@ -327,7 +354,7 @@ class FakeSupabaseClient:
         guild_id = params["p_guild_id"]
         players = self.tables.setdefault("players", [])
         txs = self.tables.setdefault("elo_transactions", [])
-        changes = []
+        changes: list[Any] = []
         for item in players_list:
             delta = win_delta if item["role_side"] == winner_side else loss_delta
             for p in players:
@@ -352,7 +379,7 @@ class FakeSupabaseClient:
                     break
         return _Response(changes)
 
-    def _rpc_submit_match_result(self, params) -> _Response:
+    def _rpc_submit_match_result(self, params: dict[str, Any]) -> _Response:
         guild_id = params["p_guild_id"]
         match_id = params["p_match_id"]
         subs = self.tables.setdefault("result_submissions", [])
@@ -389,7 +416,7 @@ class FakeSupabaseClient:
             if int(impostor_id) not in allowed:
                 raise ValueError(f"Impostor player {impostor_id} is not in match")
 
-        sub = {
+        sub: dict[str, Any] = {
             "id": self.next_id(),
             "match_id": match_id,
             "guild_id": guild_id,
@@ -405,7 +432,7 @@ class FakeSupabaseClient:
         match["result_submitted_by"] = params["p_submitted_by"]
         return _Response([copy.deepcopy(sub)])
 
-    def _rpc_approve_match_result(self, params) -> _Response:
+    def _rpc_approve_match_result(self, params: dict[str, Any]) -> _Response:
         match_id = params["p_match_id"]
         approved_by = params["p_approved_by"]
         win_elo = params["p_win_elo"]
@@ -485,9 +512,10 @@ class FakeSupabaseClient:
         match["finished_at"] = None
         return _Response([])
 
-    def _rpc_reject_match_result(self, params) -> _Response:
+    def _rpc_reject_match_result(self, params: dict[str, Any]) -> _Response:
         match_id = params["p_match_id"]
         rejected_by = params["p_rejected_by"]
+        reason = params.get("p_reason")
         subs = self.tables.setdefault("result_submissions", [])
         sub = next(
             (s for s in subs if s.get("match_id") == match_id and s.get("status") == "PENDING"),
@@ -495,11 +523,18 @@ class FakeSupabaseClient:
         )
         if sub is None:
             raise ValueError("No pending result submission")
+        match = next(
+            (m for m in self.tables.setdefault("matches", []) if m.get("id") == match_id),
+            None,
+        )
+        if match is None or match.get("result_processed"):
+            raise ValueError("Match missing or already processed")
         sub["status"] = "REJECTED"
-        sub["approved_by"] = rejected_by
+        sub["rejected_by"] = rejected_by
+        sub["rejected_at"] = None
+        sub["rejection_reason"] = (reason or "").strip() or None
+        sub["approved_by"] = None
         sub["approved_at"] = None
-        for m in self.tables.setdefault("matches", []):
-            if m.get("id") == match_id and not m.get("result_processed"):
-                m["status"] = "IN_PROGRESS"
-                m["result_submitted_by"] = None
+        match["status"] = "IN_PROGRESS"
+        match["result_submitted_by"] = None
         return _Response([])

@@ -28,7 +28,7 @@ class LogService:
         *,
         actor_id: int | None = None,
         target_entity: str | None = None,
-        details: dict | None = None,
+        details: dict[str, Any] | None = None,
         success: bool = True,
         error_message: str | None = None,
     ) -> None:
@@ -44,7 +44,7 @@ class LogService:
         await self.audit_repo.create(entry)
         await self._send_to_discord(entry, details)
 
-    async def _send_to_discord(self, entry: AuditLog, details: dict | None) -> None:
+    async def _send_to_discord(self, entry: AuditLog, details: dict[str, Any] | None) -> None:
         """Send a best-effort visible copy without coupling audit durability to Discord."""
         if self.bot is None:
             return

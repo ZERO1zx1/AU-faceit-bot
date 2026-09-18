@@ -8,6 +8,7 @@ import contextlib
 import discord
 
 from app.logging import get_logger
+from app.models.guild import GuildSettings
 from app.services.leaderboard_service import LeaderboardService
 from app.services.setup_service import SetupService
 from app.supabase_client import get_client
@@ -28,7 +29,7 @@ class LeaderboardTask:
     def __init__(self, bot: discord.Client) -> None:
         self.bot = bot
         self._running = False
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         if self._running:
@@ -69,12 +70,15 @@ class LeaderboardTask:
                     "Leaderboard refresh failed for guild=%s", settings.guild_id, exc_info=True
                 )
 
-    async def _refresh_guild(self, guild: discord.Guild, settings) -> None:
+    async def _refresh_guild(self, guild: discord.Guild, settings: GuildSettings) -> None:
         players = await LeaderboardService(get_client()).get(guild.id, limit=10)
         embed = leaderboard_embed(players, guild_name=guild.name)
-        channel = guild.get_channel(settings.leaderboard_channel_id)
+        channel_id = settings.leaderboard_channel_id
+        if channel_id is None:
+            return
+        channel = guild.get_channel(channel_id)
 
-        if settings.leaderboard_message_id and channel:
+        if settings.leaderboard_message_id and isinstance(channel, discord.TextChannel):
             try:
                 message = await channel.fetch_message(settings.leaderboard_message_id)
             except discord.HTTPException:
@@ -83,7 +87,7 @@ class LeaderboardTask:
                 await message.edit(embed=embed)
                 return
 
-        if channel is None:
+        if not isinstance(channel, discord.TextChannel):
             return
         message = await channel.send(embed=embed)
         await SetupService(get_client()).upsert_settings(

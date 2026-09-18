@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.logging import get_logger
 from app.models.guild import Guild, GuildSettings
 from app.repositories.base import BaseRepository
@@ -20,7 +22,8 @@ class GuildRepository(BaseRepository[Guild]):
 
     async def get_guild(self, guild_id: int) -> Guild | None:
         result = await self._table().select("*").eq("id", guild_id).maybe_single().execute()
-        return Guild.from_row(result.data) if result.data else None
+        row = self._single_row(result)
+        return Guild.from_row(row) if row is not None else None
 
     async def ensure_guild(self, guild_id: int) -> Guild:
         guild = await self.get_guild(guild_id)
@@ -34,13 +37,14 @@ class GuildRepository(BaseRepository[Guild]):
         result = (
             await settings_client.select("*").eq("guild_id", guild_id).maybe_single().execute()
         )
-        return GuildSettings.from_row(result.data) if result.data else None
+        row = self._single_row(result)
+        return GuildSettings.from_row(row) if row is not None else None
 
     async def list_all_settings(self) -> list[GuildSettings]:
         result = await self.client.table("guild_settings").select("*").execute()
-        return [GuildSettings.from_row(row) for row in (result.data or [])]
+        return [GuildSettings.from_row(row) for row in self._rows(result)]
 
-    async def upsert_settings(self, guild_id: int, **kwargs) -> GuildSettings:
+    async def upsert_settings(self, guild_id: int, **kwargs: Any) -> GuildSettings:
         await self.ensure_guild(guild_id)
         settings = await self.get_settings(guild_id)
         if settings is None:
@@ -48,8 +52,9 @@ class GuildRepository(BaseRepository[Guild]):
             inserted = await self.client.table("guild_settings").insert(
                 settings.to_payload()
             ).execute()
-            if inserted.data:
-                settings = GuildSettings.from_row(inserted.data[0])
+            row = self._single_row(inserted)
+            if row is not None:
+                settings = GuildSettings.from_row(row)
         else:
             payload = {k: v for k, v in kwargs.items()}
             await self.client.table("guild_settings").update(payload).eq(

@@ -1,6 +1,7 @@
 """Tests for the persistent error log."""
 
 import logging
+from pathlib import Path
 
 from app.logging import get_logger, setup_logging
 
@@ -10,7 +11,7 @@ def _flush_handlers() -> None:
         handler.flush()
 
 
-def test_exception_is_written_with_full_traceback(tmp_path):
+def test_exception_is_written_with_full_traceback(tmp_path: Path) -> None:
     log_file = setup_logging(tmp_path / "logs" / "cogs.txt")
     logger = get_logger("tests.error")
 
@@ -26,7 +27,7 @@ def test_exception_is_written_with_full_traceback(tmp_path):
     assert "Traceback (most recent call last)" in contents
 
 
-def test_setup_logging_does_not_duplicate_file_handlers(tmp_path):
+def test_setup_logging_does_not_duplicate_file_handlers(tmp_path: Path) -> None:
     log_file = tmp_path / "logs" / "cogs.txt"
     setup_logging(log_file)
     setup_logging(log_file)

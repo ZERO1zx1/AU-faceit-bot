@@ -22,7 +22,8 @@ class LevelRepository(BaseRepository[LevelRole]):
         result = (
             await self._table().select("*").eq("guild_id", guild_id).execute()
         )
-        return {LevelRole.from_row(row).level: LevelRole.from_row(row) for row in result.data or []}
+        rows = self._rows(result)
+        return {LevelRole.from_row(row).level: LevelRole.from_row(row) for row in rows}
 
     async def upsert(
         self,
@@ -48,12 +49,14 @@ class LevelRepository(BaseRepository[LevelRole]):
             "max_elo": max_elo,
             "role_id": role_id,
         }
-        if existing.data and existing.data.get("id") is not None:
-            await self._table().update(payload).eq("id", existing.data["id"]).execute()
-            return LevelRole.from_row({**existing.data, **payload})
-        result = await self._table().insert(payload).execute()
-        if result.data:
-            return LevelRole.from_row(result.data[0])
+        existing_row = self._single_row(existing)
+        if existing_row is not None and existing_row.get("id") is not None:
+            await self._table().update(payload).eq("id", existing_row["id"]).execute()
+            return LevelRole.from_row({**existing_row, **payload})
+        insert_result = await self._table().insert(payload).execute()
+        insert_rows = self._rows(insert_result)
+        if insert_rows:
+            return LevelRole.from_row(insert_rows[0])
         return LevelRole(
             guild_id=guild_id,
             level=level,

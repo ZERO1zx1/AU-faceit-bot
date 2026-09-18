@@ -15,8 +15,11 @@ guaranteed to be a valid embed regardless of which command created it:
 from __future__ import annotations
 
 import re
+from typing import TypedDict
 
 import discord
+
+from app.models.panel import Panel
 
 _TITLE_MAX = 256
 _DESCRIPTION_MAX = 4096
@@ -76,6 +79,12 @@ def _check_emoji(emoji: str | None) -> str | None:
     raise EmbedValidationError("Emoji нэг тэмдэгт эсвэл Discord custom emoji байх ёстой.")
 
 
+class _Field(TypedDict):
+    name: str
+    value: str
+    inline: bool
+
+
 class PanelEmbedBuilder:
     """Builds and validates an embed from a ``Panel`` (or plain fields dict)."""
 
@@ -95,10 +104,10 @@ class PanelEmbedBuilder:
         self.thumbnail_url = _check_url(thumbnail_url, "Thumbnail URL")
         self.image_url = _check_url(image_url, "Image URL")
         self.footer = _check(footer, _FOOTER_MAX, "Footer")
-        self._fields: list[dict] = []
+        self._fields: list[_Field] = []
 
     @classmethod
-    def from_panel(cls, panel) -> PanelEmbedBuilder:
+    def from_panel(cls, panel: Panel) -> PanelEmbedBuilder:
         color = panel.color if panel.color is not None else None
         return cls(
             title=panel.title,
@@ -111,8 +120,8 @@ class PanelEmbedBuilder:
 
     def build(self) -> discord.Embed:
         embed = discord.Embed(
-            title=self.title or discord.Embed.Empty,
-            description=self.description or discord.Embed.Empty,
+            title=self.title,
+            description=self.description,
             color=self.color or discord.Colour.blurple(),
         )
         if self.thumbnail_url:

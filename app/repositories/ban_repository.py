@@ -21,7 +21,7 @@ class BanRepository(BaseRepository[Ban]):
         return inserted
 
     async def deactivate_active(self, guild_id: int, player_id: int) -> None:
-        result = await (
+        await (
             self._table()
             .update({"active": False})
             .eq("guild_id", guild_id)
@@ -29,4 +29,3 @@ class BanRepository(BaseRepository[Ban]):
             .eq("active", True)
             .execute()
         )
-        return result

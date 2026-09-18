@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.logging import get_logger
 from app.models.panel import Panel
 from app.repositories.base import BaseRepository
@@ -27,7 +29,8 @@ class PanelRepository(BaseRepository[Panel]):
             .maybe_single()
             .execute()
         )
-        return Panel.from_row(result.data) if result.data else None
+        row = self._single_row(result)
+        return Panel.from_row(row) if row is not None else None
 
     async def list_for_guild(self, guild_id: int) -> list[Panel]:
         result = (
@@ -43,7 +46,7 @@ class PanelRepository(BaseRepository[Panel]):
         created = await self.insert(panel)
         return created if created else panel
 
-    async def update_fields(self, panel_id: int, fields: dict) -> None:
+    async def update_fields(self, panel_id: int, fields: dict[str, Any]) -> None:
         await self._table().update(fields).eq("id", panel_id).execute()
 
     async def set_message_id(self, panel_id: int, message_id: int) -> None:

@@ -33,7 +33,7 @@ def setup_logging(log_file: str | Path = LOG_FILE) -> Path:
 
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(fmt)
-    console._au_faceit_handler = True  # type: ignore[attr-defined]
+    console._au_faceit_handler = True  # type: ignore[attr-defined]  # reason: dynamic tag so test_logging.py can find stdout/stderr handlers
     root.addHandler(console)
 
     path = Path(log_file)
@@ -45,7 +45,7 @@ def setup_logging(log_file: str | Path = LOG_FILE) -> Path:
         encoding="utf-8",
     )
     file_handler.setFormatter(fmt)
-    file_handler._au_faceit_handler = True  # type: ignore[attr-defined]
+    file_handler._au_faceit_handler = True  # type: ignore[attr-defined]  # reason: dynamic tag so test_logging.py can find stdout/stderr handlers
     root.addHandler(file_handler)
     logging.captureWarnings(True)
     return path

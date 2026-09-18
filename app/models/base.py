@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -20,11 +20,11 @@ class SupabaseModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     @classmethod
-    def from_row(cls: type[T], row: dict) -> T:
+    def from_row(cls: type[T], row: dict[str, Any]) -> T:
         """Build a model from a PostgREST row dict."""
         return cls.model_validate(row)
 
-    def to_payload(self) -> dict:
+    def to_payload(self) -> dict[str, Any]:
         """Return a plain dict suitable for a REST insert/update payload.
 
         ``None`` values are dropped so that partial updates do not clear

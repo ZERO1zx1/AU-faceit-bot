@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    discord_token: str
+    discord_token: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
     faceit_api_key: str = ""

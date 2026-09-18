@@ -46,6 +46,10 @@ class ResultCog(commands.Cog):
         impostor_3: discord.Member | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
+        guild_id = guild.id
         if not screenshot.content_type or not screenshot.content_type.startswith("image/"):
             await interaction.followup.send("Screenshot нь image файл байх ёстой.", ephemeral=True)
             return
@@ -54,7 +58,7 @@ class ResultCog(commands.Cog):
         service = ResultService(client)
 
         match = await service.get_match(match_id)
-        if not match or match.guild_id != interaction.guild_id:
+        if not match or match.guild_id != guild_id:
             await interaction.followup.send("Энэ серверт тохирох match олдсонгүй.", ephemeral=True)
             return
         if match.result_processed or match.status in ("COMPLETED", "RESULT_PENDING"):
@@ -65,7 +69,7 @@ class ResultCog(commands.Cog):
 
         match_players = await service.get_match_players(match_id)
         allowed_player_ids = {player.player_id for player in match_players}
-        submitter = await service.get_player(interaction.guild_id, interaction.user.id)
+        submitter = await service.get_player(guild_id, interaction.user.id)
         if not submitter or submitter.id not in allowed_player_ids:
             await interaction.followup.send(
                 "Зөвхөн энэ match-д оролцсон тоглогч result илгээнэ.", ephemeral=True
@@ -80,7 +84,7 @@ class ResultCog(commands.Cog):
             return
         impostor_ids: list[int] = []
         for member in members:
-            player = await service.get_player(interaction.guild_id, member.id)
+            player = await service.get_player(guild_id, member.id)
             if not player or player.id not in allowed_player_ids:
                 await interaction.followup.send(
                     f"{member.mention} энэ match-ийн тоглогч биш байна.", ephemeral=True
@@ -89,7 +93,7 @@ class ResultCog(commands.Cog):
             impostor_ids.append(player.id)
 
         submission = await service.submit_result(
-            interaction.guild_id,
+            guild_id,
             match_id,
             submitted_by=interaction.user.id,
             winner_side=winner.value,
@@ -106,7 +110,13 @@ class ResultCog(commands.Cog):
             color=discord.Color.orange(),
         )
         embed.set_image(url=screenshot.url)
-        message = await interaction.channel.send(embed=embed, view=ResultApprovalView(match_id))
+        channel = interaction.channel
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await interaction.followup.send(
+                "Result panel нь text channel-д илгээгдэнэ.", ephemeral=True
+            )
+            return
+        message = await channel.send(embed=embed, view=ResultApprovalView(match_id))
         if submission.id:
             await service.set_approval_message(submission.id, message.id)
         await interaction.followup.send(
@@ -142,8 +152,12 @@ class ResultCog(commands.Cog):
                 }
             )
         embed = match_result_embed(match, match.winner_side or "PENDING", results)
-        view = None if match.result_processed else ResultApprovalView(match_id)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        if match.result_processed:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send(
+                embed=embed, view=ResultApprovalView(match_id), ephemeral=True
+            )
 
 
 async def setup(bot: commands.Bot) -> None:

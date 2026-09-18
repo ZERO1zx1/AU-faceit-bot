@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from app.logging import get_logger
 from app.services.log_service import LogService
+from app.services.queue_service import resolve_queue_size
 from app.services.setup_service import SetupService
 from app.supabase_client import get_client
 from app.ui.embeds import queue_embed, registration_embed
@@ -52,6 +53,8 @@ class SetupCog(commands.Cog):
     async def setup_server(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
+        if guild is None:
+            return
         client = get_client()
         svc = SetupService(client)
         await svc.upsert_settings(
@@ -101,7 +104,10 @@ class SetupCog(commands.Cog):
     async def setup_logs(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        permissions = channel.permissions_for(interaction.guild.me)
+        guild = interaction.guild
+        if guild is None:
+            return
+        permissions = channel.permissions_for(guild.me)
         if not (permissions.view_channel and permissions.send_messages and permissions.embed_links):
             await interaction.response.send_message(
                 embed=setup_embed(
@@ -113,7 +119,7 @@ class SetupCog(commands.Cog):
             )
             return
         await SetupService(get_client()).upsert_settings(
-            interaction.guild_id, log_channel_id=channel.id
+            guild.id, log_channel_id=channel.id
         )
         await interaction.response.send_message(
             embed=setup_embed(
@@ -134,10 +140,16 @@ class SetupCog(commands.Cog):
         channel: discord.TextChannel | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         target = channel or interaction.channel
+        if not isinstance(target, discord.TextChannel):
+            await interaction.followup.send("Panel нь text channel-д байрлана.", ephemeral=True)
+            return
         message = await target.send(embed=registration_embed(), view=RegisterView())
         await SetupService(get_client()).upsert_settings(
-            interaction.guild_id,
+            guild.id,
             register_channel_id=target.id,
             register_message_id=message.id,
         )
@@ -151,18 +163,21 @@ class SetupCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def setup_levels(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         client = get_client()
         svc = SetupService(client)
         created = 0
         for level, (min_elo, max_elo) in DEFAULT_LEVEL_BOUNDARIES.items():
-            role = discord.utils.get(interaction.guild.roles, name=f"Level {level}")
+            role = discord.utils.get(guild.roles, name=f"Level {level}")
             if not role:
-                role = await interaction.guild.create_role(
+                role = await guild.create_role(
                     name=f"Level {level}", reason="AU FACEIT level setup"
                 )
                 created += 1
             await svc.set_level(
-                interaction.guild_id,
+                guild.id,
                 level,
                 min_elo=min_elo,
                 max_elo=max_elo,
@@ -188,15 +203,21 @@ class SetupCog(commands.Cog):
         channel: discord.TextChannel | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         target = channel or interaction.channel
+        if not isinstance(target, discord.TextChannel):
+            await interaction.followup.send("Panel нь text channel-д байрлана.", ephemeral=True)
+            return
         client = get_client()
-        settings = await SetupService(client).get_settings(interaction.guild_id)
-        queue_size = settings.queue_size if settings else 15
+        settings = await SetupService(client).get_settings(guild.id)
+        queue_size = resolve_queue_size(settings)
         message = await target.send(
             embed=queue_embed(count=0, max_size=queue_size), view=QueueView()
         )
         await SetupService(client).upsert_settings(
-            interaction.guild_id,
+            guild.id,
             queue_channel_id=target.id,
             queue_message_id=message.id,
         )
@@ -214,8 +235,11 @@ class SetupCog(commands.Cog):
     async def setup_leaderboard(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            return
         await SetupService(get_client()).upsert_settings(
-            interaction.guild_id, leaderboard_channel_id=channel.id
+            guild.id, leaderboard_channel_id=channel.id
         )
         await interaction.response.send_message(
             embed=setup_embed("✅ Leaderboard channel тохирлоо", channel.mention),

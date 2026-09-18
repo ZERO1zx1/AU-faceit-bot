@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from app.logging import get_logger
 from app.repositories.elo_repository import EloRepository
@@ -21,7 +22,7 @@ class EloService:
     async def apply_match_result(
         self,
         guild_id: int,
-        players: list[dict],
+        players: list[dict[str, Any]],
         *,
         winner_side: str,
         win_delta: int = 8,
@@ -44,7 +45,7 @@ class EloService:
             "p_match_id": match_id,
             "p_approved_by": approved_by,
         }
-        await self.client.rpc("apply_match_result", params).execute()
+        await self.elo_repo.apply_match_result(params)
         logger.info(
             "Match Elo applied: match=%s, winner=%s, players=%d",
             match_id,

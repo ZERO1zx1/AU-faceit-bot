@@ -1,9 +1,13 @@
 """Discord embed builders for all bot panels."""
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
+from typing import Any
 
 import discord
 
+from app.models.match import Match, MatchPlayer
+from app.models.player import Player
 from app.utils.helpers import format_elo_change
 from app.utils.time import format_duration
 
@@ -14,7 +18,7 @@ def registration_embed(
     elo: int = 1000,
     level: int = 4,
     status: str = "Not Registered",
-):
+) -> discord.Embed:
     return discord.Embed(
         title=f"━━━ {title} ━━━",
         description=(
@@ -27,7 +31,7 @@ def registration_embed(
     )
 
 
-def profile_embed(member: discord.Member, player):
+def profile_embed(member: discord.abc.User, player: Player) -> discord.Embed:
     fmt_time = format_duration(player.total_voice_seconds)
     win_rate = (player.wins / player.matches * 100) if player.matches else 0
 
@@ -49,7 +53,7 @@ def profile_embed(member: discord.Member, player):
     return embed
 
 
-def leaderboard_embed(players, guild_name: str = "AU FACEIT"):
+def leaderboard_embed(players: Sequence[Player], guild_name: str = "AU FACEIT") -> discord.Embed:
     embed = discord.Embed(
         title=f"━━━ {guild_name} LEADERBOARD ━━━",
         color=discord.Color.gold(),
@@ -64,7 +68,7 @@ def leaderboard_embed(players, guild_name: str = "AU FACEIT"):
     return embed
 
 
-def queue_embed(count: int, max_size: int = 15, avg_elo: int = 0):
+def queue_embed(count: int, max_size: int = 15, avg_elo: int = 0) -> discord.Embed:
     status = "WAITING FOR PLAYERS"
     if count >= max_size:
         status = "MATCH STARTING..."
@@ -80,7 +84,7 @@ def queue_embed(count: int, max_size: int = 15, avg_elo: int = 0):
     return embed
 
 
-def match_embed(match, players: list):
+def match_embed(match: Match, players: Sequence[MatchPlayer]) -> discord.Embed:
     call_lines = []
     for p in players:
         player = getattr(p, "player", None)
@@ -99,7 +103,9 @@ def match_embed(match, players: list):
     return embed
 
 
-def match_result_embed(match, winner_side: str, results: list):
+def match_result_embed(
+    match: Match, winner_side: str, results: Sequence[Mapping[str, Any]]
+) -> discord.Embed:
     embed = discord.Embed(
         title=f"━━━ MATCH RESULT {match.display_id} ━━━",
         color=discord.Color.green() if winner_side == "CREWMATE" else discord.Color.red(),

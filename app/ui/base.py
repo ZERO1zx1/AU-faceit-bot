@@ -56,5 +56,10 @@ class LoggedView(discord.ui.View):
 class LoggedModal(discord.ui.Modal):
     """Modal base class that records submission failures."""
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+    async def on_error(
+        self,
+        interaction: discord.Interaction,
+        error: Exception,
+        item: discord.ui.Item[discord.ui.View] | None = None,
+    ) -> None:
         await report_ui_error(interaction, error, component=f"modal:{self.custom_id}")

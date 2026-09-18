@@ -76,3 +76,6 @@ class ResultSubmission(SupabaseModel):
     submitted_at: datetime | None = None
     approved_by: int | None = None
     approved_at: datetime | None = None
+    rejected_by: int | None = None
+    rejected_at: datetime | None = None
+    rejection_reason: str | None = None

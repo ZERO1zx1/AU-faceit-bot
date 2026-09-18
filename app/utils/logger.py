@@ -1,6 +1,7 @@
 """Logging helpers for Discord embed-based audit logs."""
 
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import discord
 
@@ -11,8 +12,16 @@ logger = get_logger(__name__)
 _DEFAULT_COLOR = discord.Color.blurple()
 
 
-async def log_to_discord(bot, guild_id: int, embed: discord.Embed, channel_id: int | None = None):
-    ch = channel_id or getattr(bot._guild_log_channels, guild_id, None)
+async def log_to_discord(
+    bot: Any,
+    guild_id: int,
+    embed: discord.Embed,
+    channel_id: int | None = None,
+) -> None:
+    ch = cast(
+        discord.TextChannel | None,
+        channel_id or bot._guild_log_channels.get(guild_id),
+    )
     if not ch:
         return
     try:

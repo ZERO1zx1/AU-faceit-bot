@@ -33,12 +33,12 @@ class VoiceSessionRepository(BaseRepository[VoiceSession]):
             .limit(1)
             .execute()
         )
-        rows = result.data or []
-        return VoiceSession.from_row(rows[0]) if rows else None
+        row = self._single_row(result)
+        return VoiceSession.from_row(row) if row is not None else None
 
     async def list_open(self) -> list[VoiceSession]:
         result = await self._table().select("*").is_("left_at", None).execute()
-        return [VoiceSession.from_row(row) for row in (result.data or [])]
+        return [VoiceSession.from_row(row) for row in self._rows(result)]
 
     async def close(self, session_id: int, left_at: datetime, duration: int) -> None:
         await self._table().update(
@@ -53,7 +53,9 @@ class VoiceTotalRepository(BaseRepository[VoiceTotal]):
     def __init__(self, client: AsyncClient) -> None:
         super().__init__(client)
 
-    async def add_seconds(self, guild_id: int, player_id: int, bucket_date, seconds: int) -> None:
+    async def add_seconds(
+        self, guild_id: int, player_id: int, bucket_date: date, seconds: int
+    ) -> None:
         today = bucket_date or date.today()
         result = (
             await self._table()
@@ -64,10 +66,11 @@ class VoiceTotalRepository(BaseRepository[VoiceTotal]):
             .maybe_single()
             .execute()
         )
-        if result.data and result.data.get("id") is not None:
+        row = self._single_row(result)
+        if row is not None and row.get("id") is not None:
             await self._table().update(
-                {"total_seconds": int(result.data.get("total_seconds") or 0) + seconds}
-            ).eq("id", result.data["id"]).execute()
+                {"total_seconds": int(row.get("total_seconds") or 0) + seconds}
+            ).eq("id", row["id"]).execute()
         else:
             await self._table().insert(
                 VoiceTotal(

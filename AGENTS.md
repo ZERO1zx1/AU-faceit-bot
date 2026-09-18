@@ -20,8 +20,8 @@ python -m app.bot
 | Command | Description |
 |---------|-------------|
 | `ruff check app/ tests/ scripts/` | Lint (Ruff, py312 target) |
-| `pytest` | Run all 31+ async tests |
-| `python -m mypy app/ tests/` | Type-check with Mypy strict |
+| `pytest` | Run all 67 async tests (in-memory fake Supabase, no live services) |
+| `python -m mypy app/ tests/ scripts/` | Type-check with Mypy strict (91 files clean) |
 | `docker compose up --build` | Full stack (Postgres + bot) |
 
 ## Project Structure (key dirs)
@@ -51,12 +51,14 @@ tests/
 ## Critical Conventions
 
 - **All persistence** flows through `service → repository → Supabase RPC`. Never query tables directly.
-- **Atomic operations** use Postgres RPC functions defined in `supabase/schema.sql`. Migrations in `supabase/migrations/` must be applied in order (see README `Migration Order`).
+- **Atomic operations** use Postgres RPC functions defined in `supabase/schema.sql`. Migrations in `supabase/migrations/` must be applied in order (see README `Migration Order`). All six migrations — including `20260913120000_result_rejection_fields.sql`, which drops the legacy 2-argument `reject_match_result` and grants `service_role` the reason-aware 3-argument overload — are required before the current code.
+- **Unregister is a soft deactivate** (`registration_service`): queued/active-match players are refused, the row keeps Elo/level/history, re-registration reactivates the same row, and the Among Us name stays reserved per guild (owner can claim it again; others cannot).
+- **Result reject** persists `rejected_by`/`rejected_at`/`rejection_reason`; a rejected submission cannot later be approved. Approval/rejection validate guild ownership and are restricted to the guild owner or a `Manage Server` role (`permission_service.is_moderator_member`).
 - **Tests use** `FakeSupabaseClient` (`tests/fake_supabase.py`) — in-memory mock. No external services needed for unit tests.
 - **Discord intents** required in `app/bot.py`: `default`, `message_content`, `members`, `voice_states`.
 - **Bot permissions**: `Manage Roles`, `Manage Channels`, `Move Members`, `Send Messages`, `Embed Links`, `View Channels`.
 - **Lint/typecheck**: `ruff check` then `mypy`. Fix lint before commit.
-- **Env loading**: `.env` read by `config.py`. Never commit `.env`.
+- **Env loading**: `.env` read by `config.py`. Never commit `.env`. `DISCORD_TOKEN` defaults to `""` at import (unit tests run without it); `app/bot.py` raises `RuntimeError` on startup if it is empty.
 
 ## Gotchas & Pitfalls
 

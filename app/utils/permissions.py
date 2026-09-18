@@ -1,32 +1,34 @@
 """Discord permission checking utilities."""
 
+from typing import Any
+
 import discord
 from discord.ext import commands
 
 
-def has_admin_role(ctx: commands.Context, settings: dict) -> bool:
-    if ctx.author.guild_permissions.administrator:
+def has_admin_role(ctx: commands.Context[Any], settings: dict[str, Any]) -> bool:
+    if isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.administrator:
         return True
     role_id = settings.get("admin_role_id")
-    if role_id:
+    if role_id and ctx.guild is not None:
         role = ctx.guild.get_role(role_id)
-        if role and role in ctx.author.roles:
+        if role and isinstance(ctx.author, discord.Member) and role in ctx.author.roles:
             return True
     return False
 
 
-def has_moderator_role(ctx: commands.Context, settings: dict) -> bool:
+def has_moderator_role(ctx: commands.Context[Any], settings: dict[str, Any]) -> bool:
     if has_admin_role(ctx, settings):
         return True
     role_id = settings.get("moderator_role_id")
-    if role_id:
+    if role_id and ctx.guild is not None:
         role = ctx.guild.get_role(role_id)
-        if role and role in ctx.author.roles:
+        if role and isinstance(ctx.author, discord.Member) and role in ctx.author.roles:
             return True
     return False
 
 
-def has_registered_role(member: discord.Member, settings: dict) -> bool:
+def has_registered_role(member: discord.Member, settings: dict[str, Any]) -> bool:
     role_id = settings.get("registered_role_id")
     if not role_id:
         return True

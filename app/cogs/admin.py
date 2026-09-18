@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from app.cogs.faceit_level import FaceitLevelCog
 from app.services.admin_service import AdminService
 from app.supabase_client import get_client
 
@@ -42,10 +43,13 @@ class AdminCog(commands.Cog):
         amount: app_commands.Range[int, -1000, 1000],
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         service = AdminService(get_client(), self.bot)
         try:
             old_elo, new_elo = await service.adjust_elo(
-                interaction.guild_id,
+                guild.id,
                 member.id,
                 amount,
                 actor_id=interaction.user.id,
@@ -57,8 +61,8 @@ class AdminCog(commands.Cog):
                 ephemeral=True,
             )
             return
-        faceit = interaction.client.get_cog("FaceitLevelCog")
-        if faceit:
+        faceit = self.bot.get_cog("FaceitLevelCog")
+        if isinstance(faceit, FaceitLevelCog):
             with contextlib.suppress(Exception):
                 await faceit.sync_member_level(member)
         await interaction.followup.send(
@@ -83,10 +87,13 @@ class AdminCog(commands.Cog):
         reason: str = "No reason",
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         service = AdminService(get_client(), self.bot)
         try:
             await service.ban_player(
-                interaction.guild_id,
+                guild.id,
                 member.id,
                 reason=reason,
                 actor_id=interaction.user.id,
@@ -109,10 +116,13 @@ class AdminCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def unban_slash(self, interaction: discord.Interaction, member: discord.Member) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            return
         service = AdminService(get_client(), self.bot)
         try:
             await service.unban_player(
-                interaction.guild_id,
+                guild.id,
                 member.id,
                 actor_id=interaction.user.id,
                 target_name=member.display_name,

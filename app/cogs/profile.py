@@ -11,7 +11,7 @@ from app.ui.embeds import profile_embed
 
 
 class ProfileCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
     @app_commands.command(
@@ -19,17 +19,27 @@ class ProfileCog(commands.Cog):
     )
     @app_commands.describe(member="Профайлыг нь харах тоглогч; хоосон бол өөрийн профайл.")
     @app_commands.guild_only()
-    async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None):
+    async def profile(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member | None = None,
+    ) -> None:
         await interaction.response.defer()
-        member = member or interaction.user
+        guild = interaction.guild
+        if guild is None:
+            return
+        if member is None:
+            if not isinstance(interaction.user, discord.Member):
+                return
+            member = interaction.user
         client = get_client()
         svc = PlayerService(client)
-        player = await svc.get(interaction.guild_id, member.id)
+        player = await svc.get(guild.id, member.id)
         if not player:
             await interaction.followup.send("Бүртгүүлээгүй байна.", ephemeral=True)
             return
         lb_svc = LeaderboardService(client)
-        lb = await lb_svc.get(interaction.guild_id, limit=100)
+        lb = await lb_svc.get(guild.id, limit=100)
         rank = next((i + 1 for i, p in enumerate(lb) if p.discord_user_id == member.id), None)
 
         embed = profile_embed(member, player)
@@ -42,17 +52,30 @@ class ProfileCog(commands.Cog):
     )
     @app_commands.describe(member="Түүхийг нь харах тоглогч; хоосон бол өөрийн түүх.")
     @app_commands.guild_only()
-    async def matches(self, interaction: discord.Interaction, member: discord.Member | None = None):
+    async def matches(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member | None = None,
+    ) -> None:
         await interaction.response.defer()
-        member = member or interaction.user
+        guild = interaction.guild
+        if guild is None:
+            return
+        if member is None:
+            if not isinstance(interaction.user, discord.Member):
+                return
+            member = interaction.user
         client = get_client()
         svc = PlayerService(client)
-        player = await svc.get(interaction.guild_id, member.id)
+        player = await svc.get(guild.id, member.id)
         if not player:
             await interaction.followup.send("Бүртгүүлээгүй байна.", ephemeral=True)
             return
 
-        history = await svc.get_history(player.id, limit=20)
+        player_id = player.id
+        if player_id is None:
+            return
+        history = await svc.get_history(player_id, limit=20)
         if not history:
             await interaction.followup.send("Match түүх байхгүй байна.", ephemeral=True)
             return
@@ -71,5 +94,5 @@ class ProfileCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(ProfileCog(bot))

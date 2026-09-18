@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.logging import get_logger
 from app.models.player import Player
 from app.repositories.base import BaseRepository
@@ -27,7 +29,8 @@ class PlayerRepository(BaseRepository[Player]):
             .maybe_single()
             .execute()
         )
-        return Player.from_row(result.data) if result.data else None
+        row = self._single_row(result)
+        return Player.from_row(row) if row is not None else None
 
     async def get_by_among_us_name(self, guild_id: int, name: str) -> Player | None:
         result = (
@@ -38,7 +41,8 @@ class PlayerRepository(BaseRepository[Player]):
             .maybe_single()
             .execute()
         )
-        return Player.from_row(result.data) if result.data else None
+        row = self._single_row(result)
+        return Player.from_row(row) if row is not None else None
 
     async def get_by_id(self, player_id: int) -> Player | None:
         return await super().get_by_id(player_id)
@@ -104,11 +108,18 @@ class PlayerRepository(BaseRepository[Player]):
             .execute()
         )
 
-    async def update(self, player_id: int, fields: dict) -> Player | None:
+    async def deactivate(self, player_id: int) -> Player | None:
+        """Soft-delete a player: flip ``active`` to ``False``, keeping history.
+
+        Used by unregister so match participation, Elo transactions and voice
+        sessions are never cascade-deleted.
+        """
+        return await self.update(player_id, {"active": False})
+
+    async def update(self, player_id: int, fields: dict[str, Any]) -> Player | None:
         result = await self._table().update(fields).eq("id", player_id).execute()
-        if result.data:
-            return Player.from_row(result.data[0])
-        return None
+        rows = self._rows(result)
+        return Player.from_row(rows[0]) if rows else None
 
     async def count(self, guild_id: int) -> int:
         result = await (

@@ -3,6 +3,8 @@
 import asyncio
 import sys
 import threading
+from types import TracebackType
+from typing import TYPE_CHECKING, Any
 
 import discord
 from discord import app_commands
@@ -11,6 +13,9 @@ from discord.ext import commands
 from app.config import settings
 from app.logging import get_logger, setup_logging
 from app.supabase_client import dispose_client, get_client, init_client
+
+if TYPE_CHECKING:
+    from app.tasks.leaderboard_task import LeaderboardTask
 
 logger = get_logger(__name__)
 
@@ -37,22 +42,30 @@ COGS = [
 setup_logging()
 
 
-def _exception_info(error: BaseException):
+def _exception_info(
+    error: BaseException,
+) -> tuple[type[BaseException], BaseException, TracebackType | None]:
     return type(error), error, error.__traceback__
 
 
 def _install_process_error_handlers() -> None:
-    def process_exception(exc_type, exc_value, traceback):
+    def process_exception(
+        exc_type: type[BaseException],
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         logger.critical(
             "Uncaught process exception",
-            exc_info=(exc_type, exc_value, traceback),
+            exc_info=(exc_type, exc_value, traceback) if exc_value is not None else None,
         )
 
-    def thread_exception(args: threading.ExceptHookArgs):
+    def thread_exception(args: threading.ExceptHookArgs) -> None:
         logger.critical(
             "Uncaught thread exception | thread=%s",
             args.thread.name if args.thread else None,
-            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback)
+            if args.exc_value is not None
+            else None,
         )
 
     sys.excepthook = process_exception
@@ -63,13 +76,13 @@ _install_process_error_handlers()
 
 
 class AUFaceitBot(commands.Bot):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(command_prefix="!", intents=intents)
-        self.leaderboard_task = None
+        self.leaderboard_task: LeaderboardTask | None = None
         self._startup_recovery_done = False
 
-    async def setup_hook(self):
-        self.tree.on_error = self.on_app_command_error
+    async def setup_hook(self) -> None:
+        self.tree.on_error = self.on_app_command_error  # type: ignore[method-assign]  # reason: discord.py has no typed setter for tree.on_error reassignment
         loop = asyncio.get_running_loop()
         loop.set_exception_handler(self._on_asyncio_error)
         await init_client()
@@ -109,7 +122,9 @@ class AUFaceitBot(commands.Bot):
                 restored += 1
         logger.info("Persistent result approval views restored | count=%d", restored)
 
-    def _on_asyncio_error(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    def _on_asyncio_error(
+        self, loop: asyncio.AbstractEventLoop, context: dict[str, Any]
+    ) -> None:
         error = context.get("exception")
         logger.error(
             "Unhandled asyncio error | message=%s future=%r task=%r",
@@ -121,7 +136,7 @@ class AUFaceitBot(commands.Bot):
 
     async def on_app_command_error(
         self,
-        interaction: discord.Interaction,
+        interaction: discord.Interaction[Any],
         error: app_commands.AppCommandError,
     ) -> None:
         original = getattr(error, "original", error)
@@ -143,7 +158,9 @@ class AUFaceitBot(commands.Bot):
         except discord.HTTPException:
             logger.exception("Failed to send slash-command error response")
 
-    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+    async def on_command_error(
+        self, ctx: commands.Context[Any], error: commands.CommandError
+    ) -> None:
         if ctx.command and ctx.command.has_error_handler():
             return
         original = getattr(error, "original", error)
@@ -156,11 +173,15 @@ class AUFaceitBot(commands.Bot):
             exc_info=_exception_info(original),
         )
 
-    async def on_error(self, event_method: str, *args, **kwargs):
+    async def on_error(self, event_method: str, *args: Any, **kwargs: Any) -> None:
         logger.exception("Discord event error | event=%s", event_method)
 
-    async def on_ready(self):
-        logger.info("AU FACEIT Bot online as %s (ID: %s)", self.user, self.user.id)
+    async def on_ready(self) -> None:
+        logger.info(
+            "AU FACEIT Bot online as %s (ID: %s)",
+            self.user,
+            self.user.id if self.user else None,
+        )
         if not self._startup_recovery_done:
             await self._recover_sessions()
             self._startup_recovery_done = True
@@ -192,7 +213,7 @@ class AUFaceitBot(commands.Bot):
             active = await service.get_active_matches()
             recovered = 0
             for match in active:
-                if match.guild_id not in self.guilds:
+                if match.guild_id not in self.guilds or match.id is None:
                     continue
                 if match.status == "CREATING":
                     await service.requeue_players(match.id)
@@ -205,14 +226,18 @@ class AUFaceitBot(commands.Bot):
         except Exception:
             logger.exception("Match recovery failed")
 
-    async def close(self):
+    async def close(self) -> None:
         if self.leaderboard_task is not None:
             await self.leaderboard_task.stop()
         await dispose_client()
         await super().close()
 
 
-def main():
+def main() -> None:
+    if not settings.discord_token:
+        raise RuntimeError(
+            "DISCORD_TOKEN is not set. Copy .env.example to .env and fill in the token."
+        )
     bot = AUFaceitBot()
     try:
         bot.run(settings.discord_token, log_handler=None)

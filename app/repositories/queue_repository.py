@@ -1,4 +1,4 @@
-"""Queue repository."""
+﻿"""Queue repository."""
 
 from __future__ import annotations
 
@@ -21,6 +21,20 @@ class QueueRepository(BaseRepository[QueueEntry]):
         super().__init__(client)
         self.client = client
 
+    async def pop_all(self, guild_id: int) -> list[int]:
+        """Atomically read and clear every WAITING entry (Postgres-owned)."""
+        result = await self.client.rpc("pop_queue_entries", {"p_guild_id": guild_id}).execute()
+        data = result.data
+        if not isinstance(data, list):
+            return []
+        player_ids: list[int] = []
+        for entry in data:
+            if isinstance(entry, bool):
+                continue
+            if isinstance(entry, (int, float, str)):
+                player_ids.append(int(entry))
+        return player_ids
+
     async def get_entries(self, guild_id: int) -> Sequence[QueueEntry]:
         result = (
             await self._table()
@@ -42,7 +56,8 @@ class QueueRepository(BaseRepository[QueueEntry]):
             .maybe_single()
             .execute()
         )
-        return QueueEntry.from_row(result.data) if result.data else None
+        row = self._single_row(result)
+        return QueueEntry.from_row(row) if row is not None else None
 
     async def add(self, guild_id: int, player_id: int) -> QueueEntry:
         entry = QueueEntry(guild_id=guild_id, player_id=player_id, status=QUEUE_STATUS_WAITING)

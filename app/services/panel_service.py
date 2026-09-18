@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.logging import get_logger
 from app.models.panel import Panel
 from app.repositories.panel_repository import PanelRepository
@@ -23,7 +25,7 @@ class PanelService:
     async def list_for_guild(self, guild_id: int) -> list[Panel]:
         return await self.panels.list_for_guild(guild_id)
 
-    async def update(self, guild_id: int, panel_id: int, fields: dict) -> Panel | None:
+    async def update(self, guild_id: int, panel_id: int, fields: dict[str, Any]) -> Panel | None:
         panel = await self.panels.get(guild_id, panel_id)
         if panel is None:
             return None

@@ -1,5 +1,7 @@
 """Help cog — /help slash command listing the real registered command tree."""
 
+from typing import Any
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -7,22 +9,24 @@ from discord.ext import commands
 ADMIN_GROUPS = {"setup", "panel", "admin"}
 _ADMIN_REVIEW = "review"
 
+_CommandNode = app_commands.Group | app_commands.Command[Any, ..., Any]
 
-def _is_admin_node(node) -> bool:
+
+def _is_admin_node(node: _CommandNode) -> bool:
     if node.name in ADMIN_GROUPS:
         return True
     perms = getattr(node, "default_permissions", None)
     return perms is not None and (perms.administrator or perms.manage_guild or perms.manage_roles)
 
 
-def _subcommands(node):
+def _subcommands(node: app_commands.Group) -> dict[str, tuple[_CommandNode, str]]:
     return {
         sub.name: (sub, sub.description or "")
         for sub in node.walk_commands()
     }
 
 
-def _render(node, indent: int = 1) -> str:
+def _render(node: _CommandNode, indent: int = 1) -> str:
     if isinstance(node, app_commands.Group):
         prefix = f"{'`/' + node.name + '`'}"
         lines = [f"{'  ' * (indent - 1)}◆ **{prefix}** — {node.description or ''}"]
@@ -31,8 +35,9 @@ def _render(node, indent: int = 1) -> str:
             lines.append(rendered)
         return "\n".join(lines)
     prefix = "`/" + node.name + "`"
-    if getattr(node, "parent", None) is not None:
-        prefix = f"`/{node.parent.name} {node.name}`"
+    parent = node.parent
+    if parent is not None:
+        prefix = f"`/{parent.name} {node.name}`"
     return f"{'  ' * indent}• {prefix} — {node.description or ''}"
 
 
@@ -46,7 +51,10 @@ class HelpCog(commands.Cog):
     @app_commands.guild_only()
     async def help(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        commands_tree = interaction.client.tree.get_commands(
+        client = interaction.client
+        if not isinstance(client, commands.Bot):
+            return
+        commands_tree = client.tree.get_commands(
             guild=interaction.guild, type=discord.AppCommandType.chat_input
         )
 
@@ -57,10 +65,10 @@ class HelpCog(commands.Cog):
             if _is_admin_node(node):
                 admin_lines.append(_render(node))
             else:
-                if node.name == "result":
+                if isinstance(node, app_commands.Group) and node.name == "result":
                     children = _subcommands(node)
-                    for child_name, child_node in children.items():
-                        lines = _render(child_node, indent=1)
+                    for child_name, child_pair in children.items():
+                        lines = _render(child_pair[0], indent=1)
                         if child_name == _ADMIN_REVIEW:
                             admin_lines.append(lines)
                         else:
@@ -97,5 +105,5 @@ class HelpCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(HelpCog(bot))

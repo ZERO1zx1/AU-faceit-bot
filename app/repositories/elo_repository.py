@@ -34,7 +34,7 @@ class EloRepository(BaseRepository[EloTransaction]):
             .limit(limit)
             .execute()
         )
-        return [EloTransaction.from_row(row) for row in result.data or []]
+        return [EloTransaction.from_row(row) for row in self._rows(result)]
 
     async def apply_elo_change(
         self,
@@ -48,6 +48,9 @@ class EloRepository(BaseRepository[EloTransaction]):
         old_elo = player.elo
         new_elo = old_elo + change
         new_peak = max(player.peak_elo, new_elo)
+
+        if player.id is None:
+            raise ValueError("Player has no id; cannot adjust Elo")
 
         await self.client.table("players").update(
             {"elo": new_elo, "peak_elo": new_peak}
@@ -67,3 +70,7 @@ class EloRepository(BaseRepository[EloTransaction]):
         player.elo = new_elo
         player.peak_elo = new_peak
         return created
+
+    async def apply_match_result(self, params: dict[str, object]) -> None:
+        """Delegate the atomic multi-player Elo settlement to Postgres."""
+        await self.client.rpc("apply_match_result", params).execute()

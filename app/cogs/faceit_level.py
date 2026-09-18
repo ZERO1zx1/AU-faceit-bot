@@ -3,6 +3,7 @@
 import discord
 from discord.ext import commands
 
+from app.models.player import Player
 from app.services.level_service import LevelService
 from app.services.log_service import LogService
 from app.services.player_service import PlayerService
@@ -10,7 +11,7 @@ from app.supabase_client import get_client
 
 
 class FaceitLevelCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
     async def sync_member_level(self, member: discord.Member) -> None:
@@ -31,7 +32,7 @@ class FaceitLevelCog(commands.Cog):
                 details={"player_id": player.id},
             )
 
-    async def sync_level(self, member: discord.Member, player):
+    async def sync_level(self, member: discord.Member, player: Player) -> None:
         """Sync level role after elo change (legacy signature)."""
         if not player.id:
             return
@@ -49,5 +50,5 @@ class FaceitLevelCog(commands.Cog):
             )
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(FaceitLevelCog(bot))

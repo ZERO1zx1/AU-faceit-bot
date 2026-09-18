@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.logging import get_logger
 from app.models.guild import GuildSettings
+from app.models.level import LevelRole
 from app.repositories.guild_repository import GuildRepository
 from app.services.level_service import LevelService
 from supabase import AsyncClient
@@ -19,7 +22,7 @@ class SetupService:
     async def get_settings(self, guild_id: int) -> GuildSettings | None:
         return await self.guilds.get_settings(guild_id)
 
-    async def upsert_settings(self, guild_id: int, **kwargs) -> GuildSettings:
+    async def upsert_settings(self, guild_id: int, **kwargs: Any) -> GuildSettings:
         return await self.guilds.upsert_settings(guild_id, **kwargs)
 
     async def set_level(
@@ -30,7 +33,7 @@ class SetupService:
         min_elo: int | None = None,
         max_elo: int | None = None,
         role_id: int | None = None,
-    ):
+    ) -> LevelRole:
         return await self.levels.upsert_level(
             guild_id, level, min_elo=min_elo, max_elo=max_elo, role_id=role_id
         )

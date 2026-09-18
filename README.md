@@ -5,13 +5,13 @@ Multi-server Discord Among Us competitive matchmaking platform.
 ## Features
 
 - **Multi-server isolation** — each Discord server has its own configuration, player database, queue, matches, Elo, and leaderboard via `guild_id`.
-- **Registration** — `/setup register` creates a persistent REGISTER panel; players complete a modal and get an auto-assigned role + nickname.
+- **Registration** — `/setup register` creates a persistent REGISTER panel; players complete a modal and get an auto-assigned role + nickname. Unregister is a **soft deactivation**: the row keeps its Elo/level/history, re-registration restores everything, and the player's Among Us name stays reserved per guild (only the original owner can reuse it).
 - **Player profiles** — `/profile`, `/matches`, Elo history tracking.
 - **Elo system** — configurable win/loss Elo, atomic 15-player transactions, full audit history.
 - **FACEIT-style levels 1–10** — custom boundaries per server, automatic role assignment and removal after every result approval or manual Elo change.
 - **Queue** — `/setup queue` persistent ENTER MATCH / LEAVE QUEUE panel with duplicate prevention and active-match guard.
 - **Matchmaking** — 15/15 triggers atomic match creation with random CALL assignment, private text + voice channels, permission locking, and rollback on partial channel creation failure.
-- **Results** — Crewmate/Impostor result submission, screenshot evidence, admin approval, atomic Elo update + player stats, anti-abuse protection. Admins can also reject a submission.
+- **Results** — Crewmate/Impostor result submission, screenshot evidence, admin approval, atomic Elo update + player stats, anti-abuse protection. Moderators (guild owner or a role with `Manage Server`) can also reject a submission with a mandatory reason; a rejected result is locked against approval for auditability.
 - **Leaderboard** — `/setup leaderboard` with auto-refresh background task every 12 minutes.
 - **Voice tracking** — join/leave/move tracking with per-player voice time; stale sessions auto-closed on restart.
 - **Custom panels** — `/panel create`, `/panel edit`, `/panel delete`, `/panel list` with full embed validation.
@@ -19,7 +19,7 @@ Multi-server Discord Among Us competitive matchmaking platform.
 
 ## Tech Stack
 
-- Python 3.13+
+- Python 3.12+
 - discord.py 2.6+
 - Supabase (PostgREST REST API via `supabase-py` AsyncClient)
   - All persistence flows through the service → repository → Supabase layer
@@ -35,7 +35,10 @@ Multi-server Discord Among Us competitive matchmaking platform.
    and the server-only **service_role** key. Never expose this key in a client application.
 
 3. In the Supabase SQL editor, run `supabase/schema.sql` — this creates all tables
-   and the critical Postgres RPC functions needed for atomic operations.
+   and the critical Postgres RPC functions needed for atomic operations. Then apply
+   every file in `supabase/migrations/` **in order** (see Migration Order below). The
+   final migration (`20260913120000_result_rejection_fields.sql`) is required for the
+   moderator result-rejection flow — apply all six before deploying the current code.
 
 4. Create a `.env` file (see `.env.example`):
 
@@ -72,8 +75,12 @@ docker compose up --build
 
 ```bash
 ruff check app/ tests/ scripts/
-pytest
+pytest                       # 67 tests, all async, in-memory fake Supabase (no live services)
+python -m mypy app tests scripts
 ```
+
+The full check workflow is: `ruff check` → `mypy` → `pytest` → `compileall`. Skip
+live Discord/Supabase entirely — unit tests run against `tests/fake_supabase.py`.
 
 ## Discord Intents
 
@@ -109,7 +116,7 @@ All commands are slash commands (registered globally on startup).
 | `/matches [member]` | View a player's Elo history (last 20) |
 | `/leaderboard` | Top 10 players by Elo |
 | `/queue-status` | Current queue count and average Elo |
-| `/unregister` | Delete your registration (with confirmation) |
+| `/unregister` | Deactivate your registration with confirmation (soft delete; re-registering restores your Elo/level/history)
 | `/help` | Show all available commands |
 | `/result submit` | Submit a match result (with screenshot + impostors) |
 
@@ -131,8 +138,8 @@ All commands are slash commands (registered globally on startup).
 | `/admin ban <member> [reason]` | Ban a player |
 | `/admin unban <member>` | Unban a player |
 | `/result review <match_id>` | Review a pending/completed result |
-| `/result approve` | Approve a pending result (via button) |
-| `/result reject` | Reject a pending result (via button) |
+| `/result approve` | Approve a pending result (button) — lock + settle Elo in one atomic RPC |
+| `/result reject` | Reject a pending result with a reason (button) — requires guild owner or `Manage Server` role |
 
 ## Migration Order
 
@@ -143,6 +150,10 @@ After a fresh `supabase/schema.sql`, apply migrations in order:
 3. `20260911152000_atomic_result_lifecycle.sql` — atomic submit/approve/reject RPCs with partial unique index
 4. `20260911200000_cleanup_match_channels.sql` — `guild_settings.cleanup_match_channels` column
 5. `20260913000000_validate_result_impostors.sql` — enforce screenshot evidence and 1–3 unique impostors
+6. `20260913120000_result_rejection_fields.sql` — rejection audit columns + reason-aware `reject_match_result(bigint, bigint, text)`; drops the legacy 2-argument reject overload
+
+Migrations are idempotent; the final one must run before the bot's result-rejection
+features are used.
 
 ## Project Structure
 
@@ -165,7 +176,7 @@ supabase/
 tests/
 ├── conftest.py         # FakeSupabaseClient fixture
 ├── fake_supabase.py    # in-memory Supabase mock (PostgREST + RPC)
-└── test_*.py           # pytest (31+ tests, all async)
+└── test_*.py           # pytest (67 tests, all async, fake Supabase)
 scripts/
 └── sync_commands.py    # sync slash commands to Discord API
 ```
@@ -178,3 +189,6 @@ scripts/
 - Voice tracking recovery should be tested by restarting the bot while a user is in a voice channel.
 - Background leaderboard refresh should be verified by waiting 12 minutes and confirming the message edits.
 - Database migrations should be applied in a staging Supabase project before production.
+- SQL security is verified by static tests only (SECURITY DEFINER + `search_path = ''` +
+  revoke/grant posture). The RPC functions have **not** been executed against a live
+  Supabase project — run them through a staging deploy before production.
