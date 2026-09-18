@@ -1,80 +1,133 @@
-"""Admin cog — /player elo, /player ban, /player unban, /match cancel."""
+"""Described ``/admin`` slash-command group."""
+
+import contextlib
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
-from app.models.ban import Ban
-from app.repositories.player_repository import PlayerRepository
-from app.services.log_service import LogService
+from app.services.admin_service import AdminService
 from app.supabase_client import get_client
 
 
+def admin_embed(title: str, description: str, *, success: bool = True) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=discord.Color.green() if success else discord.Color.red(),
+    )
+
+
 class AdminCog(commands.Cog):
-    def __init__(self, bot):
+    admin = app_commands.Group(
+        name="admin",
+        description="AU FACEIT тоглогч болон серверийн admin үйлдлүүд.",
+        guild_only=True,
+    )
+
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @commands.command(name="elo")
-    @commands.has_permissions(manage_guild=True)
-    async def elo(self, ctx: commands.Context, member: discord.Member, amount: int):
-        client = get_client()
-        repo = PlayerRepository(client)
-        player = await repo.get(ctx.guild.id, member.id)
-        if not player:
-            return await ctx.send("Player not found.")
-        old_elo = player.elo
-        new_elo = old_elo + amount
-        new_peak = max(player.peak_elo, new_elo)
-        await repo.update(player.id, {"elo": new_elo, "peak_elo": new_peak})
-        log_svc = LogService(client)
-        await log_svc.log(
-            ctx.guild.id, "ELO_MANUAL",
-            actor_id=ctx.author.id,
-            target_entity=member.display_name,
-            details={"old": old_elo, "new": new_elo, "delta": amount},
+    @admin.command(name="elo", description="Тоглогчийн Elo оноог гараар нэмэх эсвэл хасах.")
+    @app_commands.describe(
+        member="Elo-г өөрчлөх бүртгэлтэй тоглогч.",
+        amount="Нэмэх эерэг эсвэл хасах сөрөг Elo хэмжээ.",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def elo_slash(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        amount: app_commands.Range[int, -1000, 1000],
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        service = AdminService(get_client(), self.bot)
+        try:
+            old_elo, new_elo = await service.adjust_elo(
+                interaction.guild_id,
+                member.id,
+                amount,
+                actor_id=interaction.user.id,
+                target_name=member.display_name,
+            )
+        except ValueError as exc:
+            await interaction.followup.send(
+                embed=admin_embed("❌ Elo өөрчилж чадсангүй", str(exc), success=False),
+                ephemeral=True,
+            )
+            return
+        faceit = interaction.client.get_cog("FaceitLevelCog")
+        if faceit:
+            with contextlib.suppress(Exception):
+                await faceit.sync_member_level(member)
+        await interaction.followup.send(
+            embed=admin_embed(
+                "✅ Elo шинэчлэгдлээ",
+                f"{member.mention}\n**{old_elo} → {new_elo}** ({amount:+d})",
+            ),
+            ephemeral=True,
         )
-        await ctx.send(f"✅ {member.mention} Elo: {old_elo} → {new_elo}")
 
-    @commands.command(name="ban")
-    @commands.has_permissions(manage_guild=True)
-    async def ban(
-        self, ctx: commands.Context, member: discord.Member, *, reason: str = "No reason"
-    ):
-        client = get_client()
-        repo = PlayerRepository(client)
-        player = await repo.get(ctx.guild.id, member.id)
-        if not player:
-            return await ctx.send("Player not found.")
-        await repo.update(player.id, {"banned": True})
-        ban = Ban(
-            guild_id=ctx.guild.id, player_id=player.id,
-            reason=reason, banned_by=ctx.author.id,
+    @admin.command(name="ban", description="Тоглогчийг AU FACEIT системээс хориглох.")
+    @app_commands.describe(
+        member="Хориглох бүртгэлтэй тоглогч.",
+        reason="Хориг тавьж буй шалтгаан.",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def ban_slash(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        reason: str = "No reason",
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        service = AdminService(get_client(), self.bot)
+        try:
+            await service.ban_player(
+                interaction.guild_id,
+                member.id,
+                reason=reason,
+                actor_id=interaction.user.id,
+                target_name=member.display_name,
+            )
+        except ValueError as exc:
+            await interaction.followup.send(
+                embed=admin_embed("❌ Ban хийж чадсангүй", str(exc), success=False),
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            embed=admin_embed("🔨 Тоглогч хориглогдлоо", f"{member.mention}\n**Reason:** {reason}"),
+            ephemeral=True,
         )
-        await client.table("bans").insert(ban.to_payload()).execute()
-        log_svc = LogService(client)
-        await log_svc.log(
-            ctx.guild.id, "BAN", actor_id=ctx.author.id,
-            target_entity=member.display_name, details={"reason": reason},
+
+    @admin.command(name="unban", description="Тоглогчийн AU FACEIT хоригийг цуцлах.")
+    @app_commands.describe(member="Хоригийг цуцлах бүртгэлтэй тоглогч.")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def unban_slash(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        await interaction.response.defer(ephemeral=True)
+        service = AdminService(get_client(), self.bot)
+        try:
+            await service.unban_player(
+                interaction.guild_id,
+                member.id,
+                actor_id=interaction.user.id,
+                target_name=member.display_name,
+            )
+        except ValueError as exc:
+            await interaction.followup.send(
+                embed=admin_embed("❌ Unban хийж чадсангүй", str(exc), success=False),
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            embed=admin_embed("✅ Тоглогчийн хориг цуцлагдлаа", member.mention),
+            ephemeral=True,
         )
-        await ctx.send(f"🔨 {member.mention} banned: {reason}")
-
-    @commands.command(name="unban")
-    @commands.has_permissions(manage_guild=True)
-    async def unban(self, ctx: commands.Context, member: discord.Member):
-        client = get_client()
-        repo = PlayerRepository(client)
-        player = await repo.get(ctx.guild.id, member.id)
-        if not player:
-            return await ctx.send("Player not found.")
-        await repo.update(player.id, {"banned": False})
-        await (
-            client.table("bans")
-            .update({"active": False})
-            .eq("player_id", player.id)
-            .eq("active", True)
-            .execute()
-        )
-        await ctx.send(f"✅ {member.mention} unbanned")
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(AdminCog(bot))

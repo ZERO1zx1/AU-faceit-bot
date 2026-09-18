@@ -40,3 +40,4 @@ class GuildSettings(TimestampedModel):
 
     queue_size: int = 15
     nickname_format: str | None = None
+    cleanup_match_channels: bool = True

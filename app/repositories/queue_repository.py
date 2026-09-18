@@ -62,7 +62,9 @@ class QueueRepository(BaseRepository[QueueEntry]):
 
     async def clear(self, guild_id: int) -> None:
         await (
-            self._table().delete().eq("guild_id", guild_id).eq("status", QUEUE_STATUS_WAITING).execute()
+            self._table().delete().eq("guild_id", guild_id).eq(
+                "status", QUEUE_STATUS_WAITING
+            ).execute()
         )
 
     async def count(self, guild_id: int) -> int:

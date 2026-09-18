@@ -114,34 +114,25 @@ class _QueryBuilder:
     def _match(self, row):
         for col, op, value in self._filters:
             actual = row.get(col)
-            if op == "==":
-                if actual != value:
+            if op == "==" and actual != value:
+                return False
+            if op == "!=" and actual == value:
+                return False
+            if op == "in" and actual not in value:
+                return False
+            if op == "is":
+                if value is None and actual is not None:
                     return False
-            elif op == "!=":
-                if actual == value:
+                if value is not None and actual != value:
                     return False
-            elif op == "in":
-                if actual not in value:
-                    return False
-            elif op == "is":
-                if value is None:
-                    if actual is not None:
-                        return False
-                else:
-                    if actual != value:
-                        return False
-            elif op == ">":
-                if actual is None or not (actual > value):
-                    return False
-            elif op == ">=":
-                if actual is None or not (actual >= value):
-                    return False
-            elif op == "<":
-                if actual is None or not (actual < value):
-                    return False
-            elif op == "<=":
-                if actual is None or not (actual <= value):
-                    return False
+            if op == ">" and (actual is None or not (actual > value)):
+                return False
+            if op == ">=" and (actual is None or not (actual >= value)):
+                return False
+            if op == "<" and (actual is None or not (actual < value)):
+                return False
+            if op == "<=" and (actual is None or not (actual <= value)):
+                return False
         return True
 
     async def execute(self):
@@ -183,7 +174,7 @@ class _QueryBuilder:
         # select
         rows = [copy.deepcopy(row) for row in table if self._match(row)]
         for col, desc in self._orders:
-            rows.sort(key=lambda r: r.get(col), reverse=desc)
+            rows.sort(key=lambda r: (r.get(col) is None, r.get(col)), reverse=desc)
         if self._limit is not None:
             rows = rows[: self._limit]
 
@@ -233,6 +224,50 @@ class FakeSupabaseClient:
         return handler(params)
 
     # -- RPC implementations ----------------------------------------------
+
+    def _rpc_claim_match_from_queue(self, params) -> _Response:
+        guild_id = params["p_guild_id"]
+        settings = next(
+            (
+                row
+                for row in self.tables.setdefault("guild_settings", [])
+                if row.get("guild_id") == guild_id
+            ),
+            None,
+        )
+        if settings is None:
+            raise ValueError("Guild settings not found")
+        queue_size = int(settings.get("queue_size", 15))
+        players = {
+            row["id"]: row
+            for row in self.tables.setdefault("players", [])
+            if row.get("guild_id") == guild_id
+            and row.get("active", True)
+            and not row.get("banned", False)
+        }
+        waiting = sorted(
+            (
+                row
+                for row in self.tables.setdefault("queue_entries", [])
+                if row.get("guild_id") == guild_id
+                and row.get("status") == "WAITING"
+                and row.get("player_id") in players
+            ),
+            key=lambda row: (row.get("joined_at") or "", row["id"]),
+        )
+        selected = waiting[:queue_size]
+        if len(selected) < queue_size:
+            return _Response(None)
+
+        player_ids = [row["player_id"] for row in selected]
+        selected_ids = {row["id"] for row in selected}
+        queue = self.tables.setdefault("queue_entries", [])
+        queue[:] = [row for row in queue if row.get("id") not in selected_ids]
+
+        created = self._rpc_create_match(
+            {"p_guild_id": guild_id, "p_player_ids": json.dumps(player_ids)}
+        ).data[0]
+        return _Response({"match": copy.deepcopy(created), "player_ids": player_ids})
 
     def _rpc_pop_queue_entries(self, params) -> _Response:
         guild_id = params["p_guild_id"]
@@ -320,22 +355,54 @@ class FakeSupabaseClient:
     def _rpc_submit_match_result(self, params) -> _Response:
         guild_id = params["p_guild_id"]
         match_id = params["p_match_id"]
+        subs = self.tables.setdefault("result_submissions", [])
+        if any(
+            s.get("match_id") == match_id and s.get("status") == "PENDING" for s in subs
+        ):
+            raise ValueError("A pending submission already exists for this match")
+
+        match = next(
+            (m for m in self.tables.setdefault("matches", []) if m.get("id") == match_id),
+            None,
+        )
+        if match is None or match.get("guild_id") != guild_id:
+            raise ValueError("Match not found in guild")
+        if match.get("result_processed") or match.get("status") not in ("READY", "IN_PROGRESS"):
+            raise ValueError("Match does not accept result submissions")
+
+        impostor_ids = params["p_impostor_player_ids"]
+        if isinstance(impostor_ids, str):
+            impostor_ids = json.loads(impostor_ids)
+        if not 1 <= len(impostor_ids) <= 3:
+            raise ValueError("Impostor player count must be between 1 and 3")
+        if len(set(impostor_ids)) != len(impostor_ids):
+            raise ValueError("Impostor players must be unique")
+        screenshot_url = params.get("p_screenshot_url")
+        if not screenshot_url or not screenshot_url.strip():
+            raise ValueError("Screenshot is required")
+        allowed = {
+            r["player_id"]
+            for r in self.tables.setdefault("match_players", [])
+            if r.get("match_id") == match_id
+        }
+        for impostor_id in impostor_ids:
+            if int(impostor_id) not in allowed:
+                raise ValueError(f"Impostor player {impostor_id} is not in match")
+
         sub = {
             "id": self.next_id(),
             "match_id": match_id,
             "guild_id": guild_id,
             "submitted_by": params["p_submitted_by"],
             "winner_side": params["p_winner_side"],
-            "impostor_player_ids": params["p_impostor_player_ids"],
-            "screenshot_url": params.get("p_screenshot_url"),
+            "impostor_player_ids": ",".join(str(i) for i in sorted(set(impostor_ids))),
+            "screenshot_url": screenshot_url,
             "status": "PENDING",
             "submitted_at": None,
         }
-        self.tables.setdefault("result_submissions", []).append(sub)
-        for m in self.tables.setdefault("matches", []):
-            if m.get("id") == match_id:
-                m["status"] = "RESULT_PENDING"
-                m["result_submitted_by"] = params["p_submitted_by"]
+        subs.append(sub)
+        match["status"] = "RESULT_PENDING"
+        match["result_submitted_by"] = params["p_submitted_by"]
         return _Response([copy.deepcopy(sub)])
 
     def _rpc_approve_match_result(self, params) -> _Response:
@@ -344,37 +411,95 @@ class FakeSupabaseClient:
         win_elo = params["p_win_elo"]
         loss_elo = params["p_loss_elo"]
         subs = self.tables.setdefault("result_submissions", [])
-        sub = next((s for s in subs if s.get("match_id") == match_id and s.get("status") == "PENDING"), None)
+        sub = next(
+            (s for s in subs if s.get("match_id") == match_id and s.get("status") == "PENDING"),
+            None,
+        )
         if sub is None:
             raise ValueError("No pending result submission")
-        impostor_ids = set(int(x) for x in sub["impostor_player_ids"].split(",") if x)
-        mp_rows = [r for r in self.tables.setdefault("match_players", []) if r.get("match_id") == match_id]
-        players_list = []
-        for mp in mp_rows:
+        match = next(
+            (m for m in self.tables.setdefault("matches", []) if m.get("id") == match_id),
+            None,
+        )
+        if match is None or match.get("result_processed"):
+            raise ValueError("Match missing or already processed")
+
+        impostor_ids = set(int(x) for x in (sub["impostor_player_ids"] or "").split(",") if x)
+        players = self.tables.setdefault("players", [])
+        txs = self.tables.setdefault("elo_transactions", [])
+        for mp in self.tables.setdefault("match_players", []):
+            if mp.get("match_id") != match_id:
+                continue
             role_side = "IMPOSTOR" if mp["player_id"] in impostor_ids else "CREWMATE"
+            p = next((p for p in players if p.get("id") == mp["player_id"]), None)
+            if p is None:
+                continue
+            won = role_side == sub["winner_side"]
+            delta = win_elo if won else loss_elo
+            old_elo = p.get("elo", mp.get("elo_before", 1000))
+            new_elo = old_elo + delta
+            p["elo"] = new_elo
+            p["peak_elo"] = max(p.get("peak_elo", old_elo), new_elo)
+            p["matches"] = p.get("matches", 0) + 1
+            p["wins"] = p.get("wins", 0) + (1 if won else 0)
+            p["losses"] = p.get("losses", 0) + (0 if won else 1)
+            if won:
+                p["win_streak"] = p.get("win_streak", 0) + 1
+                p["best_win_streak"] = max(p.get("best_win_streak", 0), p["win_streak"])
+            else:
+                p["win_streak"] = 0
             mp["role_side"] = role_side
-            players_list.append({
-                "player_id": mp["player_id"],
-                "elo_before": mp.get("elo_before"),
-                "role_side": role_side,
+            mp["elo_before"] = old_elo
+            mp["elo_delta"] = delta
+            mp["elo_after"] = new_elo
+            mp["result"] = "WIN" if won else "LOSS"
+            txs.append({
+                "id": self.next_id(),
+                "guild_id": match.get("guild_id", sub["guild_id"]),
+                "player_id": p["id"],
+                "match_id": match_id,
+                "old_elo": old_elo,
+                "change": delta,
+                "new_elo": new_elo,
+                "reason": f"Match {sub['winner_side']}",
+                "transaction_type": "MATCH",
+                "created_by": approved_by,
             })
-        match = next((m for m in self.tables.setdefault("matches", []) if m.get("id") == match_id), None)
-        guild_id = match.get("guild_id") if match else sub["guild_id"]
+
+        self.tables.setdefault("match_results", []).append({
+            "id": self.next_id(),
+            "match_id": match_id,
+            "winner_side": sub["winner_side"],
+            "screenshot_url": sub.get("screenshot_url"),
+            "submitted_by": sub["submitted_by"],
+            "approved_by": approved_by,
+            "approved_at": None,
+        })
         sub["status"] = "APPROVED"
         sub["approved_by"] = approved_by
         sub["approved_at"] = None
-        if match:
-            match["result_processed"] = True
-            match["result_approved_by"] = approved_by
-            match["status"] = "COMPLETED"
-            match["winner_side"] = sub["winner_side"]
-        self._rpc_apply_match_result({
-            "p_guild_id": guild_id,
-            "p_players": json.dumps(players_list),
-            "p_winner_side": sub["winner_side"],
-            "p_win_delta": win_elo,
-            "p_loss_delta": loss_elo,
-            "p_match_id": match_id,
-            "p_approved_by": approved_by,
-        })
+        match["status"] = "COMPLETED"
+        match["winner_side"] = sub["winner_side"]
+        match["result_processed"] = True
+        match["result_approved_by"] = approved_by
+        match["finished_at"] = None
+        return _Response([])
+
+    def _rpc_reject_match_result(self, params) -> _Response:
+        match_id = params["p_match_id"]
+        rejected_by = params["p_rejected_by"]
+        subs = self.tables.setdefault("result_submissions", [])
+        sub = next(
+            (s for s in subs if s.get("match_id") == match_id and s.get("status") == "PENDING"),
+            None,
+        )
+        if sub is None:
+            raise ValueError("No pending result submission")
+        sub["status"] = "REJECTED"
+        sub["approved_by"] = rejected_by
+        sub["approved_at"] = None
+        for m in self.tables.setdefault("matches", []):
+            if m.get("id") == match_id and not m.get("result_processed"):
+                m["status"] = "IN_PROGRESS"
+                m["result_submitted_by"] = None
         return _Response([])

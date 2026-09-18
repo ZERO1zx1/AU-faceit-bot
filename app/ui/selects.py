@@ -11,7 +11,7 @@ class RoleSelect(discord.ui.Select):
         await interaction.response.defer()
 
 
-class ChannelSelect(discord.ui.Select[discord.ui.Select["ChannelSelect"]]):
+class ChannelSelect(discord.ui.Select):
     def __init__(self, channel_types: list[discord.ChannelType] | None = None):
         super().__init__(placeholder="Select a channel...", channel_types=channel_types or [])
         self._selected_channel_id: int | None = None

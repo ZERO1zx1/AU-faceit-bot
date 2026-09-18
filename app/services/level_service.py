@@ -7,6 +7,7 @@ import discord
 from app.logging import get_logger
 from app.models.level import LevelRole
 from app.models.player import Player
+from app.repositories.level_repository import LevelRepository
 from app.repositories.player_repository import PlayerRepository
 from supabase import AsyncClient
 
@@ -17,10 +18,27 @@ class LevelService:
     def __init__(self, client: AsyncClient) -> None:
         self.client = client
         self.players = PlayerRepository(client)
+        self.levels = LevelRepository(client)
 
     async def get_level_role_map(self, guild_id: int) -> dict[int, LevelRole]:
-        result = await self.client.table("level_roles").select("*").eq("guild_id", guild_id).execute()
-        return {LevelRole.from_row(row).level: LevelRole.from_row(row) for row in (result.data or [])}
+        return await self.levels.get_map(guild_id)
+
+    async def upsert_level(
+        self,
+        guild_id: int,
+        level: int,
+        *,
+        min_elo: int | None = None,
+        max_elo: int | None = None,
+        role_id: int | None = None,
+    ) -> LevelRole:
+        return await self.levels.upsert(
+            guild_id,
+            level,
+            min_elo=min_elo,
+            max_elo=max_elo,
+            role_id=role_id,
+        )
 
     async def calculate_level(self, guild_id: int, elo: int) -> int:
         levels = await self.get_level_role_map(guild_id)
@@ -39,6 +57,23 @@ class LevelService:
                 player.level = new_level
             logger.info("Level changed: player=%s %d\u2192%d", player.id, old_level, new_level)
         return new_level
+
+    async def refresh_player_level(
+        self, guild_id: int, player_id: int, member: discord.Member
+    ) -> tuple[int, int] | None:
+        """Recalculate a player's level from the live Elo and sync the role.
+
+        Returns ``(old_level, new_level)`` when the level changed, else ``None``.
+        """
+        player = await self.players.get_by_id(player_id)
+        if player is None or player.guild_id != guild_id:
+            return None
+        old_level = player.level
+        new_level = await self.update_player_level(player)
+        if old_level != new_level:
+            await self.sync_role(member, old_level, new_level)
+            return old_level, new_level
+        return None
 
     async def sync_role(
         self, member: discord.Member, old_level: int, new_level: int

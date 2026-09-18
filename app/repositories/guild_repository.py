@@ -36,6 +36,10 @@ class GuildRepository(BaseRepository[Guild]):
         )
         return GuildSettings.from_row(result.data) if result.data else None
 
+    async def list_all_settings(self) -> list[GuildSettings]:
+        result = await self.client.table("guild_settings").select("*").execute()
+        return [GuildSettings.from_row(row) for row in (result.data or [])]
+
     async def upsert_settings(self, guild_id: int, **kwargs) -> GuildSettings:
         await self.ensure_guild(guild_id)
         settings = await self.get_settings(guild_id)

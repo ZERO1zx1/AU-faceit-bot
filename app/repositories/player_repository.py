@@ -43,13 +43,29 @@ class PlayerRepository(BaseRepository[Player]):
     async def get_by_id(self, player_id: int) -> Player | None:
         return await super().get_by_id(player_id)
 
-    async def get_leaderboard(self, guild_id: int, limit: int = 10) -> list[Player]:
+    async def get_many_by_ids(self, guild_id: int, player_ids: list[int]) -> list[Player]:
+        if not player_ids:
+            return []
+        result = (
+            await self._table()
+            .select("*")
+            .eq("guild_id", guild_id)
+            .in_("id", player_ids)
+            .execute()
+        )
+        return [Player.from_row(row) for row in self._rows(result)]
+
+    async def get_leaderboard(
+        self, guild_id: int, limit: int = 10, sort_by: str = "elo"
+    ) -> list[Player]:
+        if sort_by not in ("elo", "level", "total_voice_seconds"):
+            sort_by = "elo"
         result = (
             await self._table()
             .select("*")
             .eq("guild_id", guild_id)
             .eq("active", True)
-            .order("elo", desc=True)
+            .order(sort_by, desc=True)
             .limit(limit)
             .execute()
         )
@@ -61,6 +77,7 @@ class PlayerRepository(BaseRepository[Player]):
         discord_user_id: int,
         among_us_name: str,
         nickname: str | None = None,
+        faceit_nickname: str | None = None,
         default_elo: int = 1000,
     ) -> Player:
         player = Player(
@@ -68,6 +85,7 @@ class PlayerRepository(BaseRepository[Player]):
             discord_user_id=discord_user_id,
             among_us_name=among_us_name,
             nickname=nickname,
+            faceit_nickname=faceit_nickname,
             elo=default_elo,
             peak_elo=default_elo,
             level=1,

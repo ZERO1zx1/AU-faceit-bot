@@ -11,6 +11,24 @@ class PermissionService:
     def __init__(self, client: AsyncClient) -> None:
         self.guilds = GuildRepository(client)
 
+    async def is_admin_member(self, member: discord.Member) -> bool:
+        """Admin check for a ``discord.Member`` (slash commands, views, modals)."""
+        if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
+            return True
+        settings = await self.guilds.get_settings(member.guild.id)
+        if settings and settings.admin_role_id:
+            role = member.guild.get_role(settings.admin_role_id)
+            if role and role in member.roles:
+                return True
+        return False
+
+    async def is_registered_member(self, member: discord.Member) -> bool:
+        settings = await self.guilds.get_settings(member.guild.id)
+        if not settings or not settings.registered_role_id:
+            return True
+        role = member.guild.get_role(settings.registered_role_id)
+        return role in member.roles if role else False
+
     async def is_admin(self, ctx: commands.Context) -> bool:
         if ctx.author.guild_permissions.administrator:
             return True

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from app.logging import get_logger
 from app.models.match import Match, MatchPlayer, MatchResult, ResultSubmission
@@ -53,6 +54,13 @@ class MatchRepository(BaseRepository[Match]):
         )
         return Match.from_row(result.data) if result.data else None
 
+    async def list_active(self, guild_id: int | None = None) -> list[Match]:
+        query = self._table().select("*").in_("status", ["CREATING", "READY", "IN_PROGRESS"])
+        if guild_id is not None:
+            query = query.eq("guild_id", guild_id)
+        result = await query.execute()
+        return [Match.from_row(row) for row in (result.data or [])]
+
     async def get_players(self, match_id: int) -> Sequence[MatchPlayer]:
         result = (
             await self.client.table("match_players")
@@ -71,6 +79,22 @@ class MatchRepository(BaseRepository[Match]):
 
     async def update_status(self, match_id: int, status: str) -> None:
         await self._table().update({"status": status}).eq("id", match_id).execute()
+
+    async def finalize_provisioning(self, match_id: int, text_id: int, voice_id: int) -> None:
+        await (
+            self._table()
+            .update(
+                {
+                    "text_channel_id": text_id,
+                    "voice_channel_id": voice_id,
+                    "status": "IN_PROGRESS",
+                    "started_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            .eq("id", match_id)
+            .eq("status", "CREATING")
+            .execute()
+        )
 
     async def update_channels(self, match_id: int, text_id: int, voice_id: int) -> None:
         await (

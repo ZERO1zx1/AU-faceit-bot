@@ -1,10 +1,9 @@
 """Profile cog — /profile, /matches."""
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
-from app.repositories.elo_repository import EloRepository
-from app.repositories.player_repository import PlayerRepository
 from app.services.leaderboard_service import LeaderboardService
 from app.services.player_service import PlayerService
 from app.supabase_client import get_client
@@ -15,53 +14,61 @@ class ProfileCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="profile")
-    async def profile(self, ctx: commands.Context, member: discord.Member = None):
-        member = member or ctx.author
+    @app_commands.command(
+        name="profile", description="Өөрийн эсвэл тоглогчийн AU FACEIT профайлыг харах."
+    )
+    @app_commands.describe(member="Профайлыг нь харах тоглогч; хоосон бол өөрийн профайл.")
+    @app_commands.guild_only()
+    async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        await interaction.response.defer()
+        member = member or interaction.user
         client = get_client()
         svc = PlayerService(client)
-        player = await svc.get(ctx.guild.id, member.id)
+        player = await svc.get(interaction.guild_id, member.id)
         if not player:
-            return await ctx.send("Бүртгүүлээгүй байна.")
+            await interaction.followup.send("Бүртгүүлээгүй байна.", ephemeral=True)
+            return
         lb_svc = LeaderboardService(client)
-        lb = await lb_svc.get(ctx.guild.id, limit=100)
-        rank = next(
-            (i + 1 for i, p in enumerate(lb) if p.discord_user_id == member.id), None
-        )
+        lb = await lb_svc.get(interaction.guild_id, limit=100)
+        rank = next((i + 1 for i, p in enumerate(lb) if p.discord_user_id == member.id), None)
 
         embed = profile_embed(member, player)
         if rank:
             embed.set_footer(text=f"Rank #{rank}")
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @commands.command(name="matches")
-    async def matches(self, ctx: commands.Context, member: discord.Member = None):
-        member = member or ctx.author
+    @app_commands.command(
+        name="matches", description="Тоглогчийн сүүлийн Elo өөрчлөлтийн түүхийг харах."
+    )
+    @app_commands.describe(member="Түүхийг нь харах тоглогч; хоосон бол өөрийн түүх.")
+    @app_commands.guild_only()
+    async def matches(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        await interaction.response.defer()
+        member = member or interaction.user
         client = get_client()
-        player_repo = PlayerRepository(client)
-        player = await player_repo.get(ctx.guild.id, member.id)
+        svc = PlayerService(client)
+        player = await svc.get(interaction.guild_id, member.id)
         if not player:
-            return await ctx.send("Бүртгүүлээгүй байна.")
+            await interaction.followup.send("Бүртгүүлээгүй байна.", ephemeral=True)
+            return
 
-        elo_repo = EloRepository(client)
-        history = await elo_repo.get_history(player.id, limit=20)
-
+        history = await svc.get_history(player.id, limit=20)
         if not history:
-            return await ctx.send("Match түүх байхгүй байна.")
+            await interaction.followup.send("Match түүх байхгүй байна.", ephemeral=True)
+            return
 
         lines = []
         for tx in history:
             sign = "+" if tx.change > 0 else ""
             lines.append(
-                f"**{tx.reason or 'Elo change'}** — {tx.old_elo} → "
-                f"{tx.new_elo} ({sign}{tx.change})"
+                f"**{tx.reason or 'Elo change'}** — {tx.old_elo} → {tx.new_elo} ({sign}{tx.change})"
             )
         embed = discord.Embed(
             title=f"━━━ {member.display_name} — Match History ━━━",
             description="\n".join(lines),
             color=discord.Color.blurple(),
         )
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):

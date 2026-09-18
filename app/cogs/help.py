@@ -1,64 +1,100 @@
-"""Help cog — !help command listing all available commands."""
+"""Help cog — /help slash command listing the real registered command tree."""
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
-FIELDS = [
-    ("⚙️ Setup", [
-        ("`!setup-server`", "Set up the server (roles, channels, category)"),
-        ("`!setup-register`", "Create the registration panel"),
-        ("`!setup-faceit-level`", "Create level roles (1–10)"),
-        ("`!setup-queue`", "Create the queue panel"),
-        ("`!setup-leaderboard`", "Set the leaderboard channel"),
-    ]),
-    ("👤 Profile", [
-        ("`!register`", "Register your Among Us name"),
-        ("`!unregister`", "Unregister your account"),
-        ("`!profile <@user>`", "Show your or someone's profile"),
-        ("`!matches <@user>`", "Show a user's match history"),
-        ("`!queue-status`", "Show the current queue"),
-        ("`!elo <@user>`", "Show a user's Elo rating"),
-    ]),
-    ("🏆 Match & Results", [
-        ("`!result <match_id>`", "Submit or view a match result"),
-        ("`!leaderboard`", "Show the top 10 players"),
-    ]),
-    ("🔧 Admin", [
-        ("`!ban <@user> <reason>`", "Ban a player"),
-        ("`!unban <user>`", "Unban a player"),
-        ("`!elo <wins> <losses>`", "Set admin Elo"),
-    ]),
-    ("❓ Info", [
-        ("`!help`", "Show this help message"),
-    ]),
-]
+ADMIN_GROUPS = {"setup", "panel", "admin"}
+_ADMIN_REVIEW = "review"
 
-HELP_EMBED = (
-    "**AU FACEIT Bot — Commands**\n\n"
-    "Use the commands below to manage registration, queue, "
-    "matches, and leaderboard. Admin commands require administrator permission."
-)
+
+def _is_admin_node(node) -> bool:
+    if node.name in ADMIN_GROUPS:
+        return True
+    perms = getattr(node, "default_permissions", None)
+    return perms is not None and (perms.administrator or perms.manage_guild or perms.manage_roles)
+
+
+def _subcommands(node):
+    return {
+        sub.name: (sub, sub.description or "")
+        for sub in node.walk_commands()
+    }
+
+
+def _render(node, indent: int = 1) -> str:
+    if isinstance(node, app_commands.Group):
+        prefix = f"{'`/' + node.name + '`'}"
+        lines = [f"{'  ' * (indent - 1)}◆ **{prefix}** — {node.description or ''}"]
+        for sub in node.commands:
+            rendered = _render(sub, indent + 1)
+            lines.append(rendered)
+        return "\n".join(lines)
+    prefix = "`/" + node.name + "`"
+    if getattr(node, "parent", None) is not None:
+        prefix = f"`/{node.parent.name} {node.name}`"
+    return f"{'  ' * indent}• {prefix} — {node.description or ''}"
 
 
 class HelpCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @commands.command(name="help")
-    async def help(self, ctx: commands.Context):
-        embed = discord.Embed(
-            title="🎮 AU FACEIT Bot — Help",
-            description=HELP_EMBED,
-            color=discord.Color.blurple(),
+    @app_commands.command(
+        name="help", description="Бүх slash command-ын жагсаалтыг харах."
+    )
+    @app_commands.guild_only()
+    async def help(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        commands_tree = interaction.client.tree.get_commands(
+            guild=interaction.guild, type=discord.AppCommandType.chat_input
         )
-        embed.set_thumbnail(url=ctx.guild.icon.url if ctx.guild and ctx.guild.icon else ctx.author.display_avatar.url)
-        for name, cmds in FIELDS:
-            value = "\n".join(f"  {c} — {d}" for c, d in cmds)
+
+        general_lines: list[str] = []
+        admin_lines: list[str] = []
+
+        for node in sorted(commands_tree, key=lambda c: c.name):
+            if _is_admin_node(node):
+                admin_lines.append(_render(node))
+            else:
+                if node.name == "result":
+                    children = _subcommands(node)
+                    for child_name, child_node in children.items():
+                        lines = _render(child_node, indent=1)
+                        if child_name == _ADMIN_REVIEW:
+                            admin_lines.append(lines)
+                        else:
+                            general_lines.append(lines)
+                    continue
+                general_lines.append(_render(node))
+
+        if general_lines:
+            value = "\n".join(general_lines)
             if len(value) > 1024:
                 value = value[:1021] + "..."
-            embed.add_field(name=name, value=value, inline=False)
-        embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.display_avatar.url)
-        await ctx.send(embed=embed)
+        else:
+            value = "Таньд харагдах slash command байхгүй."
+
+        embed = discord.Embed(
+            title="🎮 AU FACEIT Bot — Commands",
+            description="Slash command-ыг Discord дээр шууд ашиглана.",
+            color=discord.Color.blurple(),
+        )
+        embed.add_field(
+            name="👤 Player", value=value, inline=False
+        )
+
+        if admin_lines:
+            admin_value = "\n".join(admin_lines)
+            if len(admin_value) > 1024:
+                admin_value = admin_value[:1021] + "..."
+            embed.add_field(name="⚙️ Admin", value=admin_value, inline=False)
+
+        embed.set_footer(
+            text=f"Requested by {interaction.user}",
+            icon_url=interaction.user.display_avatar.url,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

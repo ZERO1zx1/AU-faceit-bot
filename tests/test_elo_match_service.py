@@ -29,6 +29,20 @@ async def test_create_match_assigns_unique_calls(client):
     assert match.average_elo == sum(1000 + i for i in range(15)) // 15
 
 
+async def test_finalize_provisioning_starts_match_with_both_channels(client):
+    ids = await _setup(client)
+    service = MatchService(client)
+    match = await service.create_match(100, ids)
+
+    await service.finalize_provisioning(match.id, text_id=123, voice_id=456)
+
+    updated = await service.get_match(match.id)
+    assert updated.status == "IN_PROGRESS"
+    assert updated.text_channel_id == 123
+    assert updated.voice_channel_id == 456
+    assert updated.started_at is not None
+
+
 async def test_apply_elo_crewmate_win(client):
     ids = await _setup(client)
     svc = EloService(client)

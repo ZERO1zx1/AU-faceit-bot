@@ -1,6 +1,6 @@
 """Logging helpers for Discord embed-based audit logs."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import discord
 
@@ -34,7 +34,7 @@ def make_audit_embed(
         title=f"[{action}]",
         description=description,
         color=discord.Color.green() if success else discord.Color.red(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
     )
     if actor:
         embed.set_author(name=str(actor), icon_url=actor.display_avatar.url)

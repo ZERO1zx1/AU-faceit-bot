@@ -71,6 +71,7 @@ class ResultSubmission(SupabaseModel):
     winner_side: str
     impostor_player_ids: str
     screenshot_url: str | None = None
+    approval_message_id: int | None = None
     status: str = "PENDING"
     submitted_at: datetime | None = None
     approved_by: int | None = None

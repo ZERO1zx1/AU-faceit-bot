@@ -60,7 +60,7 @@ def leaderboard_embed(players, guild_name: str = "AU FACEIT"):
         prefix = medals[i] if i < 3 else f"#{i+1}"
         lines.append(f"{prefix} {p.among_us_name} — ELO {p.elo:,} | LEVEL {p.level}")
     embed.description = "\n".join(lines) if lines else "No players yet."
-    embed.set_footer(text=f"Last updated: {datetime.utcnow().strftime('%H:%M')}")
+    embed.set_footer(text=f"Last updated: {datetime.now().strftime('%H:%M')}")
     return embed
 
 

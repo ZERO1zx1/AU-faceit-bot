@@ -9,6 +9,7 @@ venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+supabase/.temp/
 dist/
 build/
 *.egg-info/

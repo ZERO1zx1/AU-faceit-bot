@@ -1,6 +1,7 @@
 """Registration cog — /unregister with confirmation."""
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from app.services.registration_service import RegistrationService
@@ -12,22 +13,27 @@ class RegistrationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="unregister")
-    async def unregister(self, ctx: commands.Context):
+    @app_commands.command(
+        name="unregister", description="AU FACEIT бүртгэлээ устгах хүсэлт гаргах."
+    )
+    @app_commands.guild_only()
+    async def unregister(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         client = get_client()
         svc = RegistrationService(client)
-        player = await svc.get(ctx.guild.id, ctx.author.id)
+        player = await svc.get(interaction.guild_id, interaction.user.id)
         if not player:
-            return await ctx.send("Та бүртгэлгүй байна.")
+            await interaction.followup.send("Та бүртгэлгүй байна.", ephemeral=True)
+            return
 
         embed = discord.Embed(
             title="⚠️ Unregister",
             description="Та AU FACEIT бүртгэлээ устгахдаа итгэлтэй байна уу?\n\n"
-                        "**Note:** Active queue/match-д байвал unregister хийхгүй.",
+            "**Note:** Active queue/match-д байвал unregister хийхгүй.",
             color=discord.Color.orange(),
         )
         view = UnregisterConfirmView()
-        await ctx.send(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 async def setup(bot):

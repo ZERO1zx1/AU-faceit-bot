@@ -5,7 +5,6 @@ Usage: python -m scripts.sync_commands
 
 import asyncio
 
-from app.bot import AUFaceitBot, setup_logging, COGS
 from app.config import settings
 from app.logging import get_logger
 
@@ -13,6 +12,8 @@ logger = get_logger(__name__)
 
 
 async def sync() -> None:
+    from app.bot import AUFaceitBot
+
     bot = AUFaceitBot()
     await bot.setup_hook()
     await bot.login(settings.discord_token)

@@ -1,83 +1,241 @@
-"""Panels cog — custom panel create/edit/delete management."""
+"""Panels cog — custom panel create/edit/delete/list management (slash only)."""
 
-import json
+import contextlib
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from app.models.panel import Panel
 from app.services.log_service import LogService
+from app.services.panel_service import PanelService
 from app.supabase_client import get_client
+from app.ui.panel_builder import EmbedValidationError, PanelEmbedBuilder, parse_color
+
+
+async def _send_embed(panel: Panel, channel: discord.TextChannel) -> discord.Message:
+    builder = PanelEmbedBuilder.from_panel(panel)
+    builder.validate()
+    return await channel.send(embed=builder.build())
+
+
+async def _edit_embed(panel: Panel, guild: discord.Guild) -> bool:
+    if not panel.channel_id or not panel.message_id:
+        return False
+    channel = guild.get_channel(panel.channel_id)
+    if not channel:
+        return False
+    try:
+        message = await channel.fetch_message(panel.message_id)
+    except discord.HTTPException:
+        return False
+    builder = PanelEmbedBuilder.from_panel(panel)
+    builder.validate()
+    await message.edit(embed=builder.build())
+    return True
 
 
 class PanelsCog(commands.Cog):
+    panel = app_commands.Group(
+        name="panel",
+        description="Custom panel create/edit/delete/list удирдах.",
+        guild_only=True,
+        default_permissions=discord.Permissions(administrator=True),
+    )
+
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.group(name="panel", invoke_without_command=True)
-    @commands.has_permissions(administrator=True)
-    async def panel(self, ctx: commands.Context):
-        await ctx.send("Subcommands: `panel create`, `panel edit`, `panel delete`.")
-
-    @panel.command(name="create")
-    @commands.has_permissions(administrator=True)
+    @panel.command(name="create", description="Custom embed panel үүсгэж байрлуулах.")
+    @app_commands.describe(
+        channel="Panel байрлуулах text channel.",
+        title="Panel гарчиг.",
+        description="Panel дэлгэрэнгүй текст (нэмэлт).",
+        color="Hex color (#RRGGBB), нэмэлт.",
+        footer="Footer текст, нэмэлт.",
+        image="Зурагны http(s) URL, нэмэлт.",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
     async def panel_create(
         self,
-        ctx: commands.Context,
-        panel_type: str,
+        interaction: discord.Interaction,
         channel: discord.TextChannel,
         title: str,
-    ):
+        description: str | None = None,
+        color: str | None = None,
+        footer: str | None = None,
+        image: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
         client = get_client()
+        try:
+            parsed_color = parse_color(color) if color else None
+        except EmbedValidationError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+            return
+
         panel = Panel(
-            guild_id=ctx.guild.id,
-            type=panel_type,
+            guild_id=interaction.guild_id,
+            type="custom",
             channel_id=channel.id,
             title=title,
-            configuration_json=json.dumps({}),
-        )
-        inserted = await client.table("panels").insert(panel.to_payload()).execute()
-        panel_id = (inserted.data or [{}])[0].get("id")
-
-        log_svc = LogService(client)
-        await log_svc.log(
-            ctx.guild.id, "PANEL_CREATE",
-            actor_id=ctx.author.id, target_entity=panel_type,
-            details={"title": title, "channel_id": channel.id},
+            description=description,
+            color=parsed_color,
+            footer=footer,
+            image_url=image,
         )
 
-        embed = discord.Embed(
-            title=title, description="Panel created.", color=discord.Color.blurple()
+        try:
+            message = await _send_embed(panel, channel)
+        except EmbedValidationError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+            return
+
+        svc = PanelService(client)
+        try:
+            created = await svc.create(panel)
+        except Exception:
+            with contextlib.suppress(discord.HTTPException):
+                await message.delete()
+            raise
+        if created.id:
+            await svc.set_message_id(created.id, message.id)
+
+        await LogService(client, self.bot).log(
+            interaction.guild_id,
+            "PANEL_CREATE",
+            actor_id=interaction.user.id,
+            target_entity=created.type or "custom",
+            details={"title": title, "channel_id": channel.id, "panel_id": created.id},
         )
-        msg = await channel.send(embed=embed)
+        await interaction.followup.send(
+            f"✅ Panel created: {message.jump_url}", ephemeral=True
+        )
 
-        if panel_id:
-            await client.table("panels").update({"message_id": msg.id}).eq(
-                "id", panel_id
-            ).execute()
-
-        await ctx.send(f"✅ Panel `{panel_type}` created in {channel.mention}.")
-
-    @panel.command(name="delete")
-    @commands.has_permissions(administrator=True)
-    async def panel_delete(self, ctx: commands.Context, panel_id: int):
+    @panel.command(name="edit", description="Одоо байгаа custom panel-ийг засах.")
+    @app_commands.describe(
+        panel_id="Panel ID (Panel list командаас харна).",
+        title="Шинэ гарчиг бичихэд солигдоно (нэмэлт).",
+        description="Шинэ дэлгэрэнгүй текст (нэмэлт).",
+        color="Шинэ hex color (нэмэлт).",
+        footer="Шинэ footer текст (нэмэлт).",
+        image="Шинэ зурагны URL (нэмэлт).",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def panel_edit(
+        self,
+        interaction: discord.Interaction,
+        panel_id: int,
+        title: str | None = None,
+        description: str | None = None,
+        color: str | None = None,
+        footer: str | None = None,
+        image: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
         client = get_client()
-        result = (
-            await client.table("panels").select("*").eq("id", panel_id).maybe_single().execute()
+        svc = PanelService(client)
+        panel = await svc.get(interaction.guild_id, panel_id)
+        if panel is None:
+            await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
+            return
+
+        fields: dict = {}
+        if title is not None:
+            fields["title"] = title
+        if description is not None:
+            fields["description"] = description
+        if footer is not None:
+            fields["footer"] = footer
+        if image is not None:
+            fields["image_url"] = image
+        if color is not None:
+            try:
+                fields["color"] = parse_color(color)
+            except EmbedValidationError as e:
+                await interaction.followup.send(str(e), ephemeral=True)
+                return
+
+        try:
+            updated = await svc.update(interaction.guild_id, panel_id, fields)
+        except EmbedValidationError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+            return
+        if updated is None:
+            await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
+            return
+
+        try:
+            await _edit_embed(updated, interaction.guild)
+        except EmbedValidationError as e:
+            await interaction.followup.send(
+                f"DB шинэчлэгдсэн ч embed буруу: {e}", ephemeral=True
+            )
+            return
+
+        await LogService(client, self.bot).log(
+            interaction.guild_id,
+            "PANEL_EDIT",
+            actor_id=interaction.user.id,
+            target_entity=str(panel_id),
+            details={"field_keys": sorted(fields.keys())},
         )
-        if not result.data:
-            return await ctx.send("Panel not found.")
-        panel = Panel.from_row(result.data)
+        await interaction.followup.send(f"✅ Panel {panel_id} засагдлаа.", ephemeral=True)
+
+    @panel.command(name="delete", description="Custom panel устгах.")
+    @app_commands.describe(panel_id="Устгах panel ID.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def panel_delete(self, interaction: discord.Interaction, panel_id: int) -> None:
+        await interaction.response.defer(ephemeral=True)
+        client = get_client()
+        svc = PanelService(client)
+        panel = await svc.get(interaction.guild_id, panel_id)
+        if panel is None:
+            await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
+            return
+
         if panel.message_id:
-            channel = ctx.guild.get_channel(panel.channel_id) if panel.channel_id else None
+            channel = interaction.guild.get_channel(panel.channel_id) if panel.channel_id else None
             if channel:
                 try:
                     msg = await channel.fetch_message(panel.message_id)
                     await msg.delete()
                 except discord.HTTPException:
                     pass
-        await client.table("panels").delete().eq("id", panel_id).execute()
-        await ctx.send("✅ Panel deleted.")
+
+        deleted = await svc.delete(interaction.guild_id, panel_id)
+        if not deleted:
+            await interaction.followup.send("Panel олдсонгүй.", ephemeral=True)
+            return
+
+        await LogService(client, self.bot).log(
+            interaction.guild_id,
+            "PANEL_DELETE",
+            actor_id=interaction.user.id,
+            target_entity=str(panel_id),
+            details={"title": panel.title},
+        )
+        await interaction.followup.send("✅ Panel deleted.", ephemeral=True)
+
+    @panel.command(name="list", description="Серверийн бүх custom panel-ыг жагсаах.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def panel_list(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        panels = await PanelService(get_client()).list_for_guild(interaction.guild_id)
+        if not panels:
+            await interaction.followup.send("Panel байхгүй байна.", ephemeral=True)
+            return
+        lines = [
+            f"**#{p.id}** — {p.title or '(no title)'} ({p.type}) "
+            f"<#{p.channel_id}>" if p.channel_id else f"**#{p.id}** — {p.title or '(no title)'}"
+            for p in panels
+        ]
+        embed = discord.Embed(
+            title="Custom panels",
+            description="\n".join(lines),
+            color=discord.Color.blurple(),
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
