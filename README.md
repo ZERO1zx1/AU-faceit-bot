@@ -75,12 +75,14 @@ docker compose up --build
 
 ```bash
 ruff check app/ tests/ scripts/
-pytest                       # 67 tests, all async, in-memory fake Supabase (no live services)
+pytest                       # 71 tests, all async, in-memory fake Supabase (no live services)
 python -m mypy app tests scripts
+pip-audit -r requirements.txt
 ```
 
-The full check workflow is: `ruff check` → `mypy` → `pytest` → `compileall`. Skip
-live Discord/Supabase entirely — unit tests run against `tests/fake_supabase.py`.
+The full check workflow is: `ruff check` → `mypy` → `pytest` → `compileall` →
+`pip-audit`. Skip live Discord/Supabase entirely — unit tests run against
+`tests/fake_supabase.py`.
 
 ## Discord Intents
 
@@ -176,7 +178,7 @@ supabase/
 tests/
 ├── conftest.py         # FakeSupabaseClient fixture
 ├── fake_supabase.py    # in-memory Supabase mock (PostgREST + RPC)
-└── test_*.py           # pytest (67 tests, all async, fake Supabase)
+└── test_*.py           # pytest (71 tests, all async, fake Supabase)
 scripts/
 └── sync_commands.py    # sync slash commands to Discord API
 ```

@@ -1,7 +1,16 @@
 """AU FACEIT Bot — main entry point."""
 
-import asyncio
+import os
 import sys
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if sys.path and os.path.abspath(sys.path[0]) == _SCRIPT_DIR:
+    # Running as ``python app/bot.py`` puts ``app/`` first on sys.path, which
+    # shadows the stdlib ``logging`` package (app/logging.py) and hides the
+    # ``app`` package itself. Rebase onto the repository root.
+    sys.path[0] = os.path.dirname(_SCRIPT_DIR)
+
+import asyncio
 import threading
 from types import TracebackType
 from typing import TYPE_CHECKING, Any

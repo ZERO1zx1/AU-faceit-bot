@@ -20,8 +20,9 @@ python -m app.bot
 | Command | Description |
 |---------|-------------|
 | `ruff check app/ tests/ scripts/` | Lint (Ruff, py312 target) |
-| `pytest` | Run all 67 async tests (in-memory fake Supabase, no live services) |
+| `pytest` | Run all 71 async tests (in-memory fake Supabase, no live services) |
 | `python -m mypy app/ tests/ scripts/` | Type-check with Mypy strict (91 files clean) |
+| `pip-audit -r requirements.txt` | Dependency vulnerability scan |
 | `docker compose up --build` | Full stack (Postgres + bot) |
 
 ## Project Structure (key dirs)
