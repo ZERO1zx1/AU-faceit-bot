@@ -120,7 +120,18 @@ class AUFaceitBot(commands.Bot):
         from app.services.result_service import ResultService
         from app.ui.views import ResultApprovalView
 
-        submissions = await ResultService(get_client()).get_pending_submissions()
+        try:
+            submissions = await ResultService(get_client()).get_pending_submissions()
+        except Exception:
+            # Non-fatal: pending submissions stay in the database and their
+            # approval buttons are re-registered on a later successful boot, so
+            # a missing or not-yet-migrated result_submissions table (PGRST205)
+            # must not take the whole process down at startup.
+            logger.exception(
+                "Failed to restore persistent result approval views; continuing "
+                "without them (pending submissions remain in the database)"
+            )
+            return
         restored = 0
         for submission in submissions:
             if submission.approval_message_id:

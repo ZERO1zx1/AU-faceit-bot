@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -31,3 +32,17 @@ def test_direct_script_boot_fails_fast_on_missing_token() -> None:
     output = proc.stdout + proc.stderr
     assert "No module named 'logging.handlers'" not in output
     assert "DISCORD_TOKEN" in output
+
+
+async def test_restore_result_views_is_non_fatal_when_db_is_unprovisioned() -> None:
+    from app.bot import AUFaceitBot
+
+    bot = AUFaceitBot()
+    with patch(
+        "app.services.result_service.ResultService.get_pending_submissions",
+        new=AsyncMock(side_effect=RuntimeError("schema cache missing (PGRST205)")),
+    ):
+        await bot._restore_result_views()
+    # The method swallows the DB error, logs it, and returns without crashing
+    # the process; anything reaching here means startup can continue.
+    assert bot is not None
